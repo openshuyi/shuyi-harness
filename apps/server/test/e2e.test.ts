@@ -15,7 +15,7 @@ import type { AgentEvent, SessionRecord } from "@shuyi/types";
 import { EventBus } from "../src/bus/index.js";
 import { SqliteEventStore } from "../src/store/event-store.js";
 import { createDefaultRegistry } from "../src/tools/index.js";
-import { MockAdapter } from "../src/model/mock.js";
+import { RuntimeModelRegistry } from "../src/model/registry.js";
 import { SessionManager } from "../src/session/manager.js";
 import { rebuildContext } from "../src/context/index.js";
 
@@ -35,7 +35,7 @@ function makeStack() {
   store = new SqliteEventStore(dbPath, bus);
   bus.subscribe((e) => events.push(e));
   const tools = createDefaultRegistry();
-  const models = { adapters: new Map([["mock", new MockAdapter()]]), defaultModel: "mock" };
+  const models = new RuntimeModelRegistry({});
   manager = new SessionManager(store, tools, models);
 }
 

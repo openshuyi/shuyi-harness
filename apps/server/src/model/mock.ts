@@ -11,6 +11,7 @@ import type {
   ChatRequest,
   ChatResult,
   ModelAdapter,
+  ModelMeta,
   StreamHandlers,
 } from "./types.js";
 
@@ -22,6 +23,7 @@ export interface MockScriptStep {
 export class MockAdapter implements ModelAdapter {
   id = "mock";
   label = "Mock（脚本化测试模型）";
+  meta: ModelMeta = { provider: "local", contextWindow: 128_000 };
   private script: MockScriptStep[] = [];
 
   pushScript(step: MockScriptStep): void {

@@ -8,6 +8,7 @@ import type { EventStore } from "../store/event-store.js";
 import type { ToolRegistry, ToolContext } from "../tools/index.js";
 import type { PermissionService } from "../permission/index.js";
 import type { ModelAdapter } from "../model/types.js";
+import { estimateCost } from "../model/types.js";
 import {
   rebuildContext,
   estimateMessagesTokens,
@@ -150,7 +151,11 @@ export async function runTurn(
           type: "turn.completed",
           actor: "system",
           turn_id: turnId,
-          payload: { usage: totalUsage, model: session.model },
+          payload: {
+            usage: totalUsage,
+            model: session.model,
+            cost_estimate: estimateCost(totalUsage, adapter.meta.pricing),
+          },
         });
         store.setSessionStatus(sid, "idle");
         return;

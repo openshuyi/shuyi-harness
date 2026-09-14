@@ -4,6 +4,7 @@
  *   AGENT_DB           SQLite 路径（默认 ~/.agent/agent.db）
  *   AGENT_PORT         端口（默认 4291）
  *   AGENT_MODELS       模型配置（见 model/index.ts）
+ *   AGENT_MODELS_CONFIG 模型持久化配置路径（默认 ~/.agent/models.json，模型管理 API 写入）
  *   AGENT_MCP_CONFIG   MCP 配置路径（默认 ~/.agent/mcp.json）
  *   AGENT_CONTEXT_WINDOW 上下文窗口 token 数（默认 128000，压缩阈值=75%）
  *   AGENT_WEB_DIST     Web 构建产物目录（默认 apps/web/dist，二进制分发时用）
@@ -14,7 +15,7 @@ import { serveStatic } from "hono/bun";
 import { EventBus } from "./bus/index.js";
 import { SqliteEventStore } from "./store/event-store.js";
 import { createFullRegistry } from "./tools/index.js";
-import { buildModelRegistry } from "./model/index.js";
+import { RuntimeModelRegistry } from "./model/registry.js";
 import { SessionManager } from "./session/manager.js";
 import { createApi } from "./api/index.js";
 import { connectMcpServers } from "./mcp/index.js";
@@ -22,11 +23,13 @@ import { connectMcpServers } from "./mcp/index.js";
 const HOME = process.env.HOME ?? "/root";
 const dbPath = process.env.AGENT_DB ?? path.join(HOME, ".agent", "agent.db");
 const port = Number(process.env.AGENT_PORT ?? 4291);
+const modelsConfigFile =
+  process.env.AGENT_MODELS_CONFIG ?? path.join(HOME, ".agent", "models.json");
 
 const bus = new EventBus();
 const store = new SqliteEventStore(dbPath, bus);
 const tools = await createFullRegistry();
-const models = buildModelRegistry();
+const models = new RuntimeModelRegistry(process.env, modelsConfigFile);
 const sessions = new SessionManager(store, tools, models);
 const app = createApi({ store, bus, sessions, models });
 

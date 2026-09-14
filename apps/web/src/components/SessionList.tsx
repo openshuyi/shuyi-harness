@@ -126,6 +126,7 @@ export function SessionList() {
                   {s.usage && (s.usage.prompt_tokens > 0 || s.usage.completion_tokens > 0) && (
                     <> · {(s.usage.prompt_tokens + s.usage.completion_tokens).toLocaleString()} tok</>
                   )}
+                  {s.usage?.cost_usd != null && <> · ${s.usage.cost_usd.toFixed(4)}</>}
                 </div>
               </div>
             ))}

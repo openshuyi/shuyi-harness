@@ -28,8 +28,35 @@ export const ForkSessionRequest = z.object({
 });
 export type ForkSessionRequest = z.infer<typeof ForkSessionRequest>;
 
+export interface ModelPricing {
+  /** 输入价，美元/百万 token */
+  input: number;
+  /** 输出价，美元/百万 token */
+  output: number;
+  /** 缓存命中输入价（可选） */
+  cachedInput?: number;
+}
+
 export interface ModelInfo {
   id: string;
   label: string;
   provider: string;
+  /** 上游模型名（openai-compatible 模型有） */
+  model?: string;
+  contextWindow: number;
+  pricing?: ModelPricing;
+  source: "env" | "file" | "runtime" | "builtin";
+  isDefault: boolean;
+  hasApiKey: boolean;
+}
+
+export interface AddModelRequest {
+  id: string;
+  baseURL: string;
+  apiKey: string;
+  model: string;
+  label?: string;
+  contextWindow?: number;
+  pricing?: ModelPricing;
+  makeDefault?: boolean;
 }

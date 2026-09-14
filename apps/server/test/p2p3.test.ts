@@ -16,7 +16,7 @@ import type { AgentEvent, SessionRecord } from "@shuyi/types";
 import { EventBus } from "../src/bus/index.js";
 import { SqliteEventStore } from "../src/store/event-store.js";
 import { createDefaultRegistry } from "../src/tools/index.js";
-import { MockAdapter } from "../src/model/mock.js";
+import { RuntimeModelRegistry } from "../src/model/registry.js";
 import { SessionManager } from "../src/session/manager.js";
 import { rebuildContext, readMemory } from "../src/context/index.js";
 import { deterministicCleanup, parseSummary } from "../src/context/compaction.js";
@@ -35,10 +35,7 @@ beforeAll(() => {
   bus = new EventBus();
   store = new SqliteEventStore(dbPath, bus);
   bus.subscribe((e) => events.push(e));
-  manager = new SessionManager(store, createDefaultRegistry(), {
-    adapters: new Map([["mock", new MockAdapter()]]),
-    defaultModel: "mock",
-  });
+  manager = new SessionManager(store, createDefaultRegistry(), new RuntimeModelRegistry({}));
 });
 
 afterAll(() => {

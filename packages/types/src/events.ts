@@ -228,7 +228,12 @@ export const SessionRecord = z.object({
   last_seq: z.number().int(),
   /** v1.1 新增：累计 token 用量（由 turn.completed 聚合） */
   usage: z
-    .object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int() })
+    .object({
+      prompt_tokens: z.number().int(),
+      completion_tokens: z.number().int(),
+      /** v1.2 新增：累计成本（美元），由 turn.completed.cost_estimate 聚合 */
+      cost_usd: z.number().optional(),
+    })
     .optional(),
 });
 export type SessionRecord = z.infer<typeof SessionRecord>;

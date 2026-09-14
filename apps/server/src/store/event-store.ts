@@ -242,17 +242,26 @@ export class SqliteEventStore implements EventStore {
     };
   }
 
-  /** 聚合 turn.completed 的 token 用量（成本归因的最小形态） */
-  private totalUsage(sessionId: string): { prompt_tokens: number; completion_tokens: number } {
+  /** 聚合 turn.completed 的 token 用量与成本（成本归因的最小形态） */
+  private totalUsage(sessionId: string): {
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost_usd?: number;
+  } {
     const row = this.db
-      .query<{ p: number | null; c: number | null }, [string]>(
+      .query<{ p: number | null; c: number | null; cost: number | null }, [string]>(
         `SELECT
            SUM(json_extract(payload, '$.usage.prompt_tokens')) AS p,
-           SUM(json_extract(payload, '$.usage.completion_tokens')) AS c
+           SUM(json_extract(payload, '$.usage.completion_tokens')) AS c,
+           SUM(json_extract(payload, '$.cost_estimate')) AS cost
          FROM events WHERE session_id = ? AND type = 'turn.completed'`,
       )
       .get(sessionId);
-    return { prompt_tokens: row?.p ?? 0, completion_tokens: row?.c ?? 0 };
+    const usage = {
+      prompt_tokens: row?.p ?? 0,
+      completion_tokens: row?.c ?? 0,
+    };
+    return row?.cost != null ? { ...usage, cost_usd: row.cost } : usage;
   }
 
   search(query: string, limit = 20): SearchHit[] {

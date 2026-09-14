@@ -3,11 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import type { ModelInfo } from "@shuyi/types";
 import { useSessionStore } from "../core/store.js";
 import { fetchJsonArray } from "../core/api.js";
+import { ModelManager } from "./ModelManager.js";
 
 export function Composer() {
   const { current, trajectory, sendMessage, abort, setMode, setModel } = useSessionStore();
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [managerOpen, setManagerOpen] = useState(false);
 
   const { data: models = [] } = useQuery<ModelInfo[]>({
     queryKey: ["models"],
@@ -54,10 +56,15 @@ export function Composer() {
             </option>
           ))}
         </select>
+        <button onClick={() => setManagerOpen(true)} title="模型管理">
+          ⚙ 模型
+        </button>
         <span className="usage">
           tokens: {trajectory.usage.prompt} in / {trajectory.usage.completion} out
+          {current.usage?.cost_usd != null && <> · ${current.usage.cost_usd.toFixed(4)}</>}
         </span>
       </div>
+      <ModelManager open={managerOpen} onClose={() => setManagerOpen(false)} />
       <div className="composer-row">
         <textarea
           rows={3}

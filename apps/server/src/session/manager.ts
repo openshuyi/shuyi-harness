@@ -9,7 +9,7 @@ import type { EventStore } from "../store/event-store.js";
 import type { ToolRegistry } from "../tools/index.js";
 import type { PermissionService } from "../permission/index.js";
 import { PermissionService as PermissionServiceImpl } from "../permission/index.js";
-import type { ModelRegistry } from "../model/index.js";
+import type { RuntimeModelRegistry } from "../model/registry.js";
 import { runTurn } from "../loop/index.js";
 
 interface PendingApproval {
@@ -27,7 +27,7 @@ export class SessionManager {
   constructor(
     private store: EventStore,
     private tools: ToolRegistry,
-    private models: ModelRegistry,
+    private models: RuntimeModelRegistry,
   ) {}
 
   createSession(opts: {
@@ -79,7 +79,7 @@ export class SessionManager {
     if (session.status === "running" || session.status === "awaiting_approval") {
       throw new Error("会话正忙，请先中断或等待当前轮次结束");
     }
-    const adapter = this.models.adapters.get(session.model);
+    const adapter = this.models.get(session.model);
     if (!adapter) throw new Error(`模型不可用: ${session.model}`);
 
     const permission = this.permissionFor(sessionId);

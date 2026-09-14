@@ -16,13 +16,14 @@ import {
 import type { EventStore } from "../store/event-store.js";
 import type { EventBus } from "../bus/index.js";
 import type { SessionManager } from "../session/manager.js";
-import type { ModelRegistry } from "../model/index.js";
+import type { RuntimeModelRegistry, AddModelInput } from "../model/registry.js";
+import { estimateCost } from "../model/index.js";
 
 export interface ApiDeps {
   store: EventStore;
   bus: EventBus;
   sessions: SessionManager;
-  models: ModelRegistry;
+  models: RuntimeModelRegistry;
 }
 
 export function createApi(deps: ApiDeps): Hono {
@@ -96,13 +97,38 @@ export function createApi(deps: ApiDeps): Hono {
 
   // ---------- 模型 ----------
   app.get("/api/models", (c) => {
-    return c.json(
-      [...deps.models.adapters.values()].map((a) => ({
-        id: a.id,
-        label: a.label,
-        provider: a.id === "mock" ? "local" : "openai-compatible",
-      })),
-    );
+    return c.json(deps.models.list());
+  });
+
+  app.post("/api/models", async (c) => {
+    const body = (await c.req.json()) as AddModelInput;
+    if (!body?.id || !body.baseURL || !body.apiKey || !body.model) {
+      return c.json({ error: "缺少必填字段：id / baseURL / apiKey / model" }, 400);
+    }
+    try {
+      const item = deps.models.add(body);
+      return c.json(item, 201);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+  });
+
+  app.delete("/api/models/:id", (c) => {
+    try {
+      deps.models.remove(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
+  app.post("/api/models/:id/default", (c) => {
+    try {
+      deps.models.setDefault(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
+    }
   });
 
   // ---------- SSE 事件订阅 ----------

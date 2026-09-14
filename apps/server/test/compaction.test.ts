@@ -13,7 +13,7 @@ process.env.AGENT_CONTEXT_WINDOW = "150"; // 阈值 = 112 token，前几轮必�
 const { EventBus } = await import("../src/bus/index.js");
 const { SqliteEventStore } = await import("../src/store/event-store.js");
 const { createDefaultRegistry } = await import("../src/tools/index.js");
-const { MockAdapter } = await import("../src/model/mock.js");
+const { RuntimeModelRegistry } = await import("../src/model/registry.js");
 const { SessionManager } = await import("../src/session/manager.js");
 const { rebuildContext } = await import("../src/context/index.js");
 
@@ -25,10 +25,7 @@ const bus = new EventBus();
 const store = new SqliteEventStore(path.join(tmp, "t.db"), bus);
 const events: import("@shuyi/types").AgentEvent[] = [];
 bus.subscribe((e) => events.push(e));
-const manager = new SessionManager(store, createDefaultRegistry(), {
-  adapters: new Map([["mock", new MockAdapter()]]),
-  defaultModel: "mock",
-});
+const manager = new SessionManager(store, createDefaultRegistry(), new RuntimeModelRegistry({}));
 
 afterAll(() => {
   store.close();

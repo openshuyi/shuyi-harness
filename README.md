@@ -56,12 +56,20 @@ bun run --cwd apps/server start
 9. 侧栏搜索框 → 全文检索历史消息；会话条目显示累计 token 用量
 10. 刷新页面 / 重启服务端 → 会话现场从事件日志完整恢复
 
-接入真实模型（OpenAI 兼容协议，含 DeepSeek 等）：
+接入真实模型（OpenAI 兼容协议，含 DeepSeek / OpenAI 等）——三种方式：
 
 ```bash
-export AGENT_MODELS="deepseek|https://api.deepseek.com/v1|sk-你的key|deepseek-chat"
-bun run dev:server   # 新会话即可选择 deepseek 模型
+# 方式一：环境变量（适合 CI / 固定配置）
+# 格式：id|baseURL|apiKey|model[|label][|contextWindow][|输入价$/M][|输出价$/M][|缓存价$/M]
+export AGENT_MODELS="deepseek|https://api.deepseek.com/v1|sk-你的key|deepseek-chat|DeepSeek V3|64000|0.27|1.10|0.07,openai|https://api.openai.com/v1|sk-另一key|gpt-4o"
+bun run dev:server
+
+# 方式二：Web 界面「⚙ 模型」面板直接添加（写入 ~/.agent/models.json，重启不丢）
+# 方式三：直接编辑 ~/.agent/models.json
 ```
+
+模型层自带：429/5xx 指数退避重试（最多 4 次）、流式中断自动恢复、
+按定价的美元成本估算（输入/输出/缓存命中分别计价，显示在侧栏与输入区）。
 
 ## 测试
 
@@ -110,8 +118,9 @@ SQLite 事件日志（append-only，唯一事实来源）
 
 ## 当前状态与 roadmap
 
-已完成（v0.2）：P0 骨架、P1 安全基线（含 git 原子提交）、P2 上下文工程
+已完成（v0.3）：P0 骨架、P1 安全基线（含 git 原子提交）、P2 上下文工程
 （结构化压缩 / 记忆 / Plan/Build 工具面）、P3 能力扩展（LSP / MCP / 子代理）、
-P4 主体（全文搜索 / 用量统计 / 二进制分发）。
-待做：批量编辑审阅、Trajectory 来源过滤、真实模型长任务调优、团队版三挂钩的
+P4 主体（全文搜索 / 用量统计 / 二进制分发）、P5 模型实战化（多 provider /
+运行时模型管理 / 失败重试 / 成本估算）。
+待做：真实模型长任务调优、批量编辑审阅、Trajectory 来源过滤、团队版三挂钩的
 中心化实现（身份 / 存储 / 审计）。详见 docs 中开发计划文档。
