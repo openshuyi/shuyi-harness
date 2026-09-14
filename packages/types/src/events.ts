@@ -132,7 +132,10 @@ export const SubagentCompletedPayload = z.object({
 });
 
 // 轮次与状态
-export const TurnStartedPayload = z.object({});
+export const TurnStartedPayload = z.object({
+  /** 轮次开始时工作区的 git HEAD（回滚基线；非仓库时缺省） */
+  base_commit: z.string().optional(),
+});
 export const TurnCompletedPayload = z.object({
   usage: z.object({
     prompt_tokens: z.number().int(),
@@ -143,6 +146,12 @@ export const TurnCompletedPayload = z.object({
   model: z.string(),
 });
 export const TurnAbortedPayload = z.object({ reason: z.string() });
+export const TurnRollbackPayload = z.object({
+  /** 回滚目标提交（某轮的 base_commit） */
+  commit: z.string(),
+  /** 回滚涉及的轮次数（从目标轮次到当前） */
+  turns_reverted: z.number().int().optional(),
+});
 export const SessionStatusChangedPayload = z.object({ status: SessionStatus });
 export const ErrorOccurredPayload = z.object({
   scope: z.string(),
@@ -175,6 +184,7 @@ export const EventPayloads = {
   "turn.started": TurnStartedPayload,
   "turn.completed": TurnCompletedPayload,
   "turn.aborted": TurnAbortedPayload,
+  "turn.rollback": TurnRollbackPayload,
   "session.status_changed": SessionStatusChangedPayload,
   "error.occurred": ErrorOccurredPayload,
 } as const;

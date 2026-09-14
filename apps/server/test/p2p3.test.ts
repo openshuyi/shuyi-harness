@@ -191,3 +191,107 @@ describe("P4：搜索与用量", () => {
     expect(session.usage!.prompt_tokens).toBeGreaterThan(0);
   });
 });
+
+describe("P6：非法 tool_call 纠错回环", () => {
+  test("幻觉未知工具后收到含可用清单的失败反馈，下一轮自我修正", async () => {
+    const { MockAdapter } = await import("../src/model/mock.js");
+    const mock = (manager as unknown as { models: { get(id: string): unknown } }).models.get("mock") as InstanceType<typeof MockAdapter>;
+    // 脚本：第一次幻觉调用不存在的工具，第二次用正确工具完成任务
+    mock.pushScript({ toolCalls: [{ name: "delete_everything", args: {} }] });
+    mock.pushScript({ toolCalls: [{ name: "write", args: { path: `${workspace}/fixed.txt`, content: "修正后的写入" } }] });
+    mock.pushScript({ text: "已修正工具调用并完成任务。" });
+
+    const s = manager.createSession({ cwd: workspace, mode: "build", model: "mock", sandbox_level: "workspace" });
+    const mark = events.length;
+    manager.postMessage(s.session_id, "帮我完成写入任务");
+
+    const start = Date.now();
+    let completed = false;
+    while (Date.now() - start < 8000) {
+      if (events.slice(mark).some((e) => e.type === "turn.completed")) { completed = true; break; }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(completed).toBe(true);
+
+    const slice = events.slice(mark);
+    // 第一次调用以未知工具失败，且错误信息带可用工具清单
+    const failed = slice.find(
+      (e) => e.type === "tool.call.failed" && (e.payload as { error: string }).error.includes("未知工具"),
+    );
+    expect(failed).toBeDefined();
+    expect((failed!.payload as { error: string }).error).toContain("可用工具");
+    // 第二次调用正确工具成功
+    const done = slice.find(
+      (e) => e.type === "tool.call.completed" && fs.existsSync(`${workspace}/fixed.txt`),
+    );
+    expect(done).toBeDefined();
+  });
+});
+
+describe("P6：会话回放导出", () => {
+  test("事件日志渲染为自包含 HTML（消息/工具/标记齐备）", async () => {
+    const { renderReplayHtml } = await import("../src/api/replay.js");
+    const s = manager.createSession({ cwd: workspace, mode: "build", model: "mock", sandbox_level: "workspace" });
+    const mark = events.length;
+    manager.postMessage(s.session_id, "!write replay-test.txt 回放内容");
+
+    const start = Date.now();
+    while (Date.now() - start < 8000) {
+      if (events.slice(mark).some((e) => e.type === "turn.completed")) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+
+    const sessionEvents = store.readSince(s.session_id, -1);
+    const html = renderReplayHtml(manager.getSession(s.session_id)!, sessionEvents);
+    expect(html).toContain("<!DOCTYPE html>");
+    expect(html).toContain("!write replay-test.txt"); // 用户消息
+    expect(html).toContain("write"); // 工具卡片
+    expect(html).toContain("工具已执行完毕"); // 助手回复
+    expect(html).not.toContain("undefined");
+  });
+});
+
+describe("P7：会话回滚", () => {
+  test("写入两轮后回滚到第一轮基线，第二轮改动消失且事件落库", async () => {
+    const { execSync } = await import("node:child_process");
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "agent-rollback-"));
+    execSync("git init", { cwd: ws });
+    execSync("git -c user.name=t -c user.email=t@t commit --allow-empty -m init", { cwd: ws });
+
+    const s = manager.createSession({ cwd: ws, mode: "build", model: "mock", sandbox_level: "workspace" });
+
+    // 第一轮写入
+    let mark = events.length;
+    manager.postMessage(s.session_id, "!write round1.txt 第一轮");
+    let start = Date.now();
+    while (Date.now() - start < 8000) {
+      if (events.slice(mark).some((e) => e.type === "turn.completed")) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    // 第二轮写入
+    mark = events.length;
+    manager.postMessage(s.session_id, "!write round2.txt 第二轮");
+    start = Date.now();
+    while (Date.now() - start < 8000) {
+      if (events.slice(mark).some((e) => e.type === "turn.completed")) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    expect(fs.existsSync(path.join(ws, "round1.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, "round2.txt"))).toBe(true);
+
+    // 取第二轮的 base_commit，回滚 → round2.txt 应消失，round1.txt 保留
+    const evts = store.readSince(s.session_id, -1);
+    const started = evts.filter((e) => e.type === "turn.started");
+    const base2 = (started[1].payload as { base_commit?: string }).base_commit!;
+    expect(base2).toBeDefined();
+
+    manager.rollback(s.session_id, base2);
+    expect(fs.existsSync(path.join(ws, "round1.txt"))).toBe(true);
+    expect(fs.existsSync(path.join(ws, "round2.txt"))).toBe(false);
+
+    // turn.rollback 事件已落库（append-only，不删历史）
+    const after = store.readSince(s.session_id, -1);
+    expect(after.some((e) => e.type === "turn.rollback" && (e.payload as { commit: string }).commit === base2)).toBe(true);
+    fs.rmSync(ws, { recursive: true, force: true });
+  });
+});

@@ -19,7 +19,7 @@ import {
 } from "../context/index.js";
 import { compactSession } from "../context/compaction.js";
 import { runSubagent } from "./subagent.js";
-import { ensureRepo, commitFiles } from "../git/index.js";
+import { ensureRepo, commitFiles, headCommit } from "../git/index.js";
 
 export interface LoopDeps {
   store: EventStore;
@@ -62,7 +62,14 @@ export async function runTurn(
   const turnId = randomUUID();
   const repoReady = ensureRepo(session.cwd); // git 撤销机制（不可用时静默降级）
 
-  store.append({ session_id: sid, type: "turn.started", actor: "system", turn_id: turnId, payload: {} });
+  store.append({
+    session_id: sid,
+    type: "turn.started",
+    actor: "system",
+    turn_id: turnId,
+    // 记录轮次开始时的 git HEAD：回滚到此轮 = reset 到 base_commit
+    payload: { base_commit: repoReady ? (headCommit(session.cwd) ?? undefined) : undefined },
+  });
   store.append({
     session_id: sid,
     type: "message.user",
@@ -177,19 +184,8 @@ export async function runTurn(
 
         const tool = tools.get(call.name);
         if (!tool) {
-          store.append({
-            session_id: sid,
-            type: "tool.call.failed",
-            actor: "system",
-            turn_id: turnId,
-            payload: { call_id: call.id, error: `未知工具: ${call.name}`, duration_ms: 0 },
-          });
-          continue;
-        }
-
-        // 参数校验
-        const parsed = tool.argsSchema.safeParse(call.args);
-        if (!parsed.success) {
+          // 非法 tool_call 纠错：附可用工具清单，模型下一轮据此自我修正
+          const visible = specs.map((t) => t.name).join(", ");
           store.append({
             session_id: sid,
             type: "tool.call.failed",
@@ -197,7 +193,27 @@ export async function runTurn(
             turn_id: turnId,
             payload: {
               call_id: call.id,
-              error: `参数校验失败: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+              error: `未知工具: ${call.name}。可用工具：${visible}。请检查工具名后重试。`,
+              duration_ms: 0,
+            },
+          });
+          continue;
+        }
+
+        // 参数校验（纠错：附字段级错误详情，模型下一轮补齐/修正参数）
+        const parsed = tool.argsSchema.safeParse(call.args);
+        if (!parsed.success) {
+          const details = parsed.error.issues
+            .map((i) => `${i.path.join(".") || "(根)"}: ${i.message}`)
+            .join("; ");
+          store.append({
+            session_id: sid,
+            type: "tool.call.failed",
+            actor: "system",
+            turn_id: turnId,
+            payload: {
+              call_id: call.id,
+              error: `参数校验失败: ${details}。请按工具参数说明修正后重新调用 ${call.name}。`,
               duration_ms: 0,
             },
           });

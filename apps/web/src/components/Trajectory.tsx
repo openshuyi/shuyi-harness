@@ -56,9 +56,30 @@ function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
   );
 }
 
+/** 时间线条目来源分类（过滤用） */
+type SourceFilter = "user" | "assistant" | "tool" | "system";
+
+const FILTERS: { id: SourceFilter; label: string }[] = [
+  { id: "user", label: "用户" },
+  { id: "assistant", label: "助手" },
+  { id: "tool", label: "工具" },
+  { id: "system", label: "系统" },
+];
+
+function itemSource(item: TimelineItem): SourceFilter {
+  switch (item.kind) {
+    case "user": return "user";
+    case "assistant": return "assistant";
+    case "tool": return "tool";
+    case "marker": return "system";
+  }
+}
+
 export function Trajectory() {
-  const { trajectory, current } = useSessionStore();
+  const { trajectory, current, rollback } = useSessionStore();
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [hidden, setHidden] = useState<Set<SourceFilter>>(new Set());
+  const [rollingBack, setRollingBack] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -76,9 +97,54 @@ export function Trajectory() {
     );
   }
 
+  const visible = trajectory.items.filter((i) => !hidden.has(itemSource(i)));
+  const toggle = (f: SourceFilter) =>
+    setHidden((prev) => {
+      const next = new Set(prev);
+      if (next.has(f)) next.delete(f); else next.add(f);
+      return next;
+    });
+
   return (
     <div className="trajectory">
-      {trajectory.items.map((item) => {
+      <div className="trajectory-filter">
+        {FILTERS.map((f) => (
+          <button
+            key={f.id}
+            className={`filter-chip ${hidden.has(f.id) ? "off" : "on"} source-${f.id}`}
+            onClick={() => toggle(f.id)}
+            title={hidden.has(f.id) ? `显示${f.label}` : `隐藏${f.label}`}
+          >
+            {f.label}
+          </button>
+        ))}
+        {trajectory.baselines.length > 0 && trajectory.status === "idle" && (
+          <button
+            className="filter-chip"
+            disabled={rollingBack}
+            title={`回滚工作区到本轮开始前的状态（git reset 到 ${trajectory.baselines[trajectory.baselines.length - 1].baseCommit}）`}
+            onClick={() => {
+              const base = trajectory.baselines[trajectory.baselines.length - 1];
+              if (!confirm(`确定回滚？工作区将恢复到最近一轮开始前的状态（提交 ${base.baseCommit}）。\n当前未提交改动会先自动保存为一个提交。`)) return;
+              setRollingBack(true);
+              rollback(base.baseCommit)
+                .catch((err) => alert(err instanceof Error ? err.message : String(err)))
+                .finally(() => setRollingBack(false));
+            }}
+          >
+            {rollingBack ? "回滚中…" : "↩ 撤销本轮改动"}
+          </button>
+        )}
+        <a
+          className="filter-chip replay-link"
+          href={`/api/sessions/${current.session_id}/replay`}
+          download
+          title="导出会话回放（自包含 HTML，可分享）"
+        >
+          ⬇ 回放
+        </a>
+      </div>
+      {visible.map((item) => {
         switch (item.kind) {
           case "user":
             return (

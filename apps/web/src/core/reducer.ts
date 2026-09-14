@@ -31,12 +31,20 @@ export interface PendingApproval {
   riskSummary: string;
 }
 
+export interface TurnBaseline {
+  turnId: string;
+  baseCommit: string;
+  seq: number;
+}
+
 export interface TrajectoryState {
   items: TimelineItem[];
   pendingApprovals: PendingApproval[];
   status: SessionStatus;
   lastSeq: number;
   usage: { prompt: number; completion: number };
+  /** 各轮次的 git 基线（turn.started.base_commit），用于回滚按钮 */
+  baselines: TurnBaseline[];
 }
 
 export const initialTrajectory: TrajectoryState = {
@@ -45,6 +53,7 @@ export const initialTrajectory: TrajectoryState = {
   status: "idle",
   lastSeq: -1,
   usage: { prompt: 0, completion: 0 },
+  baselines: [],
 };
 
 export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectoryState {
@@ -53,6 +62,15 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
   const p = e.payload as Record<string, unknown>;
 
   switch (e.type) {
+    case "turn.started": {
+      const base = p.base_commit as string | undefined;
+      if (!base || !e.turn_id) return s;
+      return {
+        ...s,
+        baselines: [...s.baselines, { turnId: e.turn_id, baseCommit: base, seq: e.seq }],
+      };
+    }
+
     case "message.user":
       return { ...s, items: [...s.items, { kind: "user", key: e.event_id, text: p.text as string }] };
 
@@ -189,6 +207,15 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
 
     case "turn.aborted":
       return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `轮次已中断：${p.reason}`, tone: "warn" }] };
+
+    case "turn.rollback":
+      return {
+        ...s,
+        items: [
+          ...s.items,
+          { kind: "marker", key: e.event_id, text: `工作区已回滚到提交 ${String(p.commit).slice(0, 8)}`, tone: "warn" },
+        ],
+      };
 
     case "error.occurred":
       return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `错误：${p.message}`, tone: "error" }] };

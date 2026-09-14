@@ -67,10 +67,29 @@ export function SessionList() {
     }
   };
 
+  const [theme, setTheme] = useState<string>(
+    () => document.documentElement.dataset.theme ?? "dark",
+  );
+  const toggleTheme = () => {
+    const next = theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    localStorage.setItem("shuyi-theme", next);
+    setTheme(next);
+  };
+
   return (
     <div className="sidebar">
       <div className="sidebar-header">
-        <h1>Agent</h1>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h1>Agent</h1>
+          <button
+            className="theme-toggle"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
+        </div>
         <button
           className="primary"
           style={{ width: "100%", marginBottom: 8 }}

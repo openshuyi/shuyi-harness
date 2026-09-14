@@ -10,6 +10,7 @@ export function Composer() {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
+  const [files, setFiles] = useState<File[]>([]);
 
   const { data: models = [] } = useQuery<ModelInfo[]>({
     queryKey: ["models"],
@@ -30,8 +31,9 @@ export function Composer() {
     if (!t || busy) return;
     setSending(true);
     try {
-      await sendMessage(t);
+      await sendMessage(t, files.length ? files : undefined);
       setText("");
+      setFiles([]);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -65,7 +67,29 @@ export function Composer() {
         </span>
       </div>
       <ModelManager open={managerOpen} onClose={() => setManagerOpen(false)} />
+      {files.length > 0 && (
+        <div className="attachment-bar">
+          {files.map((f, i) => (
+            <span key={i} className="attachment-chip">
+              📎 {f.name}
+              <button onClick={() => setFiles(files.filter((_, j) => j !== i))}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="composer-row">
+        <label className="attach-btn" title="添加附件（文件将保存到工作区供 agent 读取）">
+          📎
+          <input
+            type="file"
+            multiple
+            style={{ display: "none" }}
+            onChange={(e) => {
+              if (e.target.files) setFiles([...files, ...Array.from(e.target.files)]);
+              e.target.value = "";
+            }}
+          />
+        </label>
         <textarea
           rows={3}
           placeholder={busy ? "Agent 运行中…" : "输入消息，Enter 发送，Shift+Enter 换行"}

@@ -48,3 +48,37 @@ export function commitFiles(cwd: string, files: string[], message: string): stri
     return null;
   }
 }
+
+/** 取当前 HEAD 短 hash（回滚基线记录用）；非仓库返回 null */
+export function headCommit(cwd: string): string | null {
+  try {
+    const head = git(cwd, ["rev-parse", "--short", "HEAD"]);
+    return head.ok && head.stdout ? head.stdout : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 回滚工作区到指定提交（git reset --hard <commit>）。
+ * 安全约束：只允许回滚到本仓库中真实存在的提交；reset 前先提交
+ * 当前未暂存改动（若有），避免静默丢失 agent 之外的工作。
+ */
+export function rollbackTo(cwd: string, commit: string): { ok: boolean; error?: string } {
+  try {
+    // 校验提交存在
+    if (!git(cwd, ["cat-file", "-e", commit]).ok) {
+      return { ok: false, error: `提交不存在: ${commit}` };
+    }
+    // 先把未提交改动收进一个安全提交，防止 reset --hard 丢工作
+    const dirty = git(cwd, ["status", "--porcelain"]);
+    if (dirty.ok && dirty.stdout.length > 0) {
+      git(cwd, ["add", "-A"]);
+      git(cwd, ["commit", "-m", "agent: 回滚前自动保存未提交改动"]);
+    }
+    const r = git(cwd, ["reset", "--hard", commit]);
+    return r.ok ? { ok: true } : { ok: false, error: "git reset 执行失败" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}

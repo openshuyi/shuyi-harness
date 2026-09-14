@@ -17,7 +17,7 @@ import type { EventStore } from "../store/event-store.js";
 import type { EventBus } from "../bus/index.js";
 import type { SessionManager } from "../session/manager.js";
 import type { RuntimeModelRegistry, AddModelInput } from "../model/registry.js";
-import { estimateCost } from "../model/index.js";
+import { renderReplayHtml } from "./replay.js";
 
 export interface ApiDeps {
   store: EventStore;
@@ -58,6 +58,25 @@ export function createApi(deps: ApiDeps): Hono {
     return c.json({ ok: true }, 202);
   });
 
+  // 带附件发消息：multipart/form-data（text 字段 + 任意数量文件）
+  app.post("/api/sessions/:id/messages/with-attachments", async (c) => {
+    const sessionId = c.req.param("id");
+    const form = await c.req.formData();
+    const text = String(form.get("text") ?? "").trim();
+    if (!text) return c.json({ error: "text 不能为空" }, 400);
+    const attachments: { name: string; path: string }[] = [];
+    for (const [, value] of form.entries()) {
+      // Hono FormData 的值类型为 string | File；以结构化特征判断（避免 instanceof 跨 realm 问题）
+      if (typeof value === "object" && value !== null && "arrayBuffer" in value && "name" in value) {
+        const file = value as File;
+        const buf = Buffer.from(await file.arrayBuffer());
+        attachments.push(deps.sessions.saveAttachment(sessionId, file.name, buf));
+      }
+    }
+    deps.sessions.postMessageWithAttachments(sessionId, text, attachments);
+    return c.json({ ok: true, attachments }, 202);
+  });
+
   app.post("/api/sessions/:id/abort", (c) => {
     deps.sessions.abort(c.req.param("id"));
     return c.json({ ok: true });
@@ -80,6 +99,18 @@ export function createApi(deps: ApiDeps): Hono {
     return c.json({ ok: true });
   });
 
+  // ---------- 回滚（P7）：工作区恢复到某轮开始时的 git 状态 ----------
+  app.post("/api/sessions/:id/rollback", async (c) => {
+    const body = (await c.req.json()) as { commit?: string };
+    if (!body?.commit) return c.json({ error: "缺少 commit 参数" }, 400);
+    try {
+      deps.sessions.rollback(c.req.param("id"), body.commit);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
   // ---------- 审批 ----------
   app.post("/api/sessions/:id/approvals/:approvalId", async (c) => {
     const body = ResolveApprovalRequest.parse(await c.req.json());
@@ -93,6 +124,20 @@ export function createApi(deps: ApiDeps): Hono {
     const q = c.req.query("q")?.trim();
     if (!q) return c.json([]);
     return c.json(deps.store.search(q));
+  });
+
+  // ---------- 会话回放导出（P6） ----------
+  app.get("/api/sessions/:id/replay", (c) => {
+    const session = deps.sessions.getSession(c.req.param("id"));
+    if (!session) return c.json({ error: "会话不存在" }, 404);
+    const events = deps.store.readSince(session.session_id, -1);
+    const html = renderReplayHtml(session, events);
+    return new Response(html, {
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-disposition": `attachment; filename="replay-${session.session_id.slice(0, 8)}.html"`,
+      },
+    });
   });
 
   // ---------- 模型 ----------

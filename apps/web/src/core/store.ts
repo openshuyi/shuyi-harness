@@ -16,7 +16,7 @@ interface SessionStoreState {
   trajectory: TrajectoryState;
   selectSession: (s: SessionRecord) => void;
   dispatch: (e: AgentEvent) => void;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, attachments?: File[]) => Promise<void>;
   abort: () => Promise<void>;
   resolveApproval: (
     approvalId: string,
@@ -25,6 +25,7 @@ interface SessionStoreState {
   ) => Promise<void>;
   setMode: (mode: "plan" | "build") => Promise<void>;
   setModel: (model: string) => Promise<void>;
+  rollback: (commit: string) => Promise<void>;
 }
 
 let eventSource: SessionEventSource | null = null;
@@ -44,14 +45,25 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
     set((state) => ({ trajectory: reduceEvent(state.trajectory, e) }));
   },
 
-  async sendMessage(text) {
+  async sendMessage(text, attachments?: File[]) {
     const s = get().current;
     if (!s) return;
-    const res = await fetch(`/api/sessions/${s.session_id}/messages`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
+    let res: Response;
+    if (attachments?.length) {
+      const form = new FormData();
+      form.set("text", text);
+      for (const f of attachments) form.append("files", f);
+      res = await fetch(`/api/sessions/${s.session_id}/messages/with-attachments`, {
+        method: "POST",
+        body: form,
+      });
+    } else {
+      res = await fetch(`/api/sessions/${s.session_id}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error ?? `发送失败 ${res.status}`);
@@ -97,5 +109,19 @@ export const useSessionStore = create<SessionStoreState>((set, get) => ({
       body: JSON.stringify({ model }),
     });
     set({ current: { ...s, model } });
+  },
+
+  async rollback(commit) {
+    const s = get().current;
+    if (!s) return;
+    const res = await fetch(`/api/sessions/${s.session_id}/rollback`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ commit }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error ?? `回滚失败 ${res.status}`);
+    }
   },
 }));

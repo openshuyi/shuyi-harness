@@ -4,6 +4,8 @@
  *       服务端重启后无需特殊动作——这正是事件日志是唯一事实来源的含义。
  */
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { SessionMode, SandboxLevel, SessionRecord } from "@shuyi/types";
 import type { EventStore } from "../store/event-store.js";
 import type { ToolRegistry } from "../tools/index.js";
@@ -11,6 +13,7 @@ import type { PermissionService } from "../permission/index.js";
 import { PermissionService as PermissionServiceImpl } from "../permission/index.js";
 import type { RuntimeModelRegistry } from "../model/registry.js";
 import { runTurn } from "../loop/index.js";
+import { rollbackTo } from "../git/index.js";
 
 interface PendingApproval {
   resolve: (r: { decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string }) => void;
@@ -74,6 +77,35 @@ export class SessionManager {
   }
 
   postMessage(sessionId: string, text: string): void {
+    this.startTurn(sessionId, text, []);
+  }
+
+  /** 上传附件：保存到工作区 .agent/attachments/<sessionId>/，返回路径 */
+  saveAttachment(sessionId: string, name: string, data: Buffer): { name: string; path: string } {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    // 防路径穿越：只取文件名部分
+    const safeName = path.basename(name).replace(/[^\w.\-一-龥]/g, "_") || "attachment";
+    const dir = path.join(session.cwd, ".agent", "attachments", sessionId);
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, `${Date.now()}-${safeName}`);
+    fs.writeFileSync(target, data);
+    return { name: safeName, path: target };
+  }
+
+  postMessageWithAttachments(
+    sessionId: string,
+    text: string,
+    attachments: { name: string; path: string }[],
+  ): void {
+    this.startTurn(sessionId, text, attachments);
+  }
+
+  private startTurn(
+    sessionId: string,
+    text: string,
+    attachments: { name: string; path: string }[],
+  ): void {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error(`会话不存在: ${sessionId}`);
     if (session.status === "running" || session.status === "awaiting_approval") {
@@ -82,12 +114,16 @@ export class SessionManager {
     const adapter = this.models.get(session.model);
     if (!adapter) throw new Error(`模型不可用: ${session.model}`);
 
+    // 附件落事件（在轮次开始前，保证 message.user 事件带附件信息）
+    const effectiveText = attachments.length
+      ? `${text}\n\n[附件 ${attachments.length} 个，可用 read 工具读取：${attachments.map((a) => a.path).join(", ")}]`
+      : text;
+
     const permission = this.permissionFor(sessionId);
     const controller = new AbortController();
     this.abortControllers.set(sessionId, controller);
 
-    // 异步跑轮次；错误已由 Loop 内部落 error.occurred 事件
-    void runTurn(session, text, adapter, permission, {
+    void runTurn(session, effectiveText, adapter, permission, {
       store: this.store,
       tools: this.tools,
       waitForApproval: (sid, approvalId) => this.waitForApproval(sid, approvalId),
@@ -186,6 +222,32 @@ export class SessionManager {
       actor: "user",
       payload: {},
     });
+  }
+
+  /**
+   * 回滚工作区到某一轮开始时的状态（git reset 到该轮的 base_commit）。
+   * 事件日志保持 append-only：不删除任何事件，只追加 turn.rollback 记录。
+   */
+  rollback(sessionId: string, commit: string): void {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    if (session.status === "running" || session.status === "awaiting_approval") {
+      throw new Error("会话正忙，请先中断再回滚");
+    }
+    const result = rollbackTo(session.cwd, commit);
+    if (!result.ok) throw new Error(result.error ?? "回滚失败");
+    this.store.append({
+      session_id: sessionId,
+      type: "turn.rollback",
+      actor: "user",
+      payload: { commit },
+    });
+  }
+
+  /** headless/脚本场景：预放行指定工具（等价于逐个「本会话放行」） */
+  rememberAllowAll(sessionId: string, toolNames: string[]): void {
+    const p = this.permissionFor(sessionId);
+    for (const name of toolNames) p.rememberRule(name, "allow");
   }
 
   private permissionFor(sessionId: string): PermissionService {

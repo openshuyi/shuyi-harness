@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts"
+    "start": "bun src/index.ts",
+    "headless": "bun src/headless.ts"
   },
   "dependencies": {
     "hono": "^4.6.0",
