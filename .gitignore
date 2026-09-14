@@ -1,0 +1,21 @@
+# 依赖与构建产物
+node_modules
+dist
+agent-bin
+
+# 本地数据
+*.db
+*.db-wal
+*.db-shm
+.agent
+
+# 密钥与环境
+.env
+.env.*
+!.env.example
+mcp.json
+
+# 日志与缓存
+*.log
+.cache
+.turbo

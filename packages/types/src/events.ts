@@ -1,0 +1,234 @@
+/**
+ * 事件模型 v1 —— 全系统第一份契约。
+ * 对应文档：《编码智能体-事件模型设计.md》
+ * 演进规则：只增不改。新增事件类型直接追加；payload 只加可选字段。
+ */
+import { z } from "zod";
+
+// ---------- 基础枚举 ----------
+export const Actor = z.enum(["user", "agent", "system"]);
+export type Actor = z.infer<typeof Actor>;
+
+export const SessionMode = z.enum(["plan", "build"]);
+export type SessionMode = z.infer<typeof SessionMode>;
+
+export const SandboxLevel = z.enum(["readonly", "workspace", "full"]);
+export type SandboxLevel = z.infer<typeof SandboxLevel>;
+
+export const SessionStatus = z.enum(["idle", "running", "awaiting_approval"]);
+export type SessionStatus = z.infer<typeof SessionStatus>;
+
+// ---------- Payload 定义 ----------
+
+// 会话生命周期
+export const SessionCreatedPayload = z.object({
+  title: z.string(),
+  cwd: z.string(),
+  mode: SessionMode,
+  model: z.string(),
+  sandbox_level: SandboxLevel,
+});
+export const SessionConfigChangedPayload = z.object({
+  mode: SessionMode.optional(),
+  model: z.string().optional(),
+  sandbox_level: SandboxLevel.optional(),
+});
+export const SessionForkedPayload = z.object({
+  from_session_id: z.string(),
+  fork_at_seq: z.number().int(),
+});
+export const SessionArchivedPayload = z.object({});
+
+// 消息与流式输出
+export const MessageUserPayload = z.object({
+  text: z.string(),
+  attachments: z.array(z.object({ name: z.string(), path: z.string() })).optional(),
+});
+export const AssistantDeltaPayload = z.object({ text_delta: z.string() });
+export const AssistantThinkingDeltaPayload = z.object({ thinking_delta: z.string() });
+export const AssistantCompletedPayload = z.object({
+  text: z.string(),
+  thinking: z.string().optional(),
+  finish_reason: z.string(),
+});
+
+// 工具调用
+export const ToolCallProposedPayload = z.object({
+  call_id: z.string(),
+  tool: z.string(),
+  args: z.record(z.string(), z.unknown()),
+  permission_hint: z.enum(["allow", "ask", "deny"]),
+});
+export const ApprovalRequestedPayload = z.object({
+  approval_id: z.string(),
+  call_id: z.string(),
+  tool: z.string(),
+  args: z.record(z.string(), z.unknown()),
+  risk_summary: z.string(),
+});
+export const ApprovalResolvedPayload = z.object({
+  approval_id: z.string(),
+  decision: z.enum(["approve", "deny"]),
+  remember_rule: z.string().optional(),
+  deny_reason: z.string().optional(),
+});
+export const ToolCallStartedPayload = z.object({ call_id: z.string() });
+export const ToolCallOutputDeltaPayload = z.object({ call_id: z.string(), chunk: z.string() });
+export const ToolCallCompletedPayload = z.object({
+  call_id: z.string(),
+  result: z.string(),
+  truncated: z.boolean(),
+  blob_path: z.string().optional(),
+  duration_ms: z.number(),
+  side_effects: z
+    .object({
+      files_written: z.array(z.string()).optional(),
+      diff: z.string().optional(),
+      commit: z.string().optional(),
+    })
+    .optional(),
+});
+export const ToolCallFailedPayload = z.object({
+  call_id: z.string(),
+  error: z.string(),
+  duration_ms: z.number(),
+});
+
+// 上下文与记忆
+export const ContextAssembledPayload = z.object({
+  prefix_hash: z.string(),
+  message_count: z.number().int(),
+  token_estimate: z.number().int(),
+  model: z.string(),
+});
+export const ContextCompactedPayload = z.object({
+  summary: z.object({
+    session_intent: z.string(),
+    files_modified: z.array(z.string()),
+    key_decisions: z.array(z.string()),
+    active_goals: z.array(z.string()),
+    next_steps: z.string(),
+  }),
+  covers_until_seq: z.number().int(),
+  tokens_before: z.number().int(),
+  tokens_after: z.number().int(),
+});
+export const MemoryWrittenPayload = z.object({
+  file: z.string(),
+  excerpt: z.string(),
+  reason: z.string(),
+});
+
+// 子代理（v1.1 新增）
+export const SubagentStartedPayload = z.object({
+  task: z.string(),
+  parent_call_id: z.string(),
+});
+export const SubagentCompletedPayload = z.object({
+  task: z.string(),
+  parent_call_id: z.string(),
+  summary_excerpt: z.string(),
+  duration_ms: z.number(),
+});
+
+// 轮次与状态
+export const TurnStartedPayload = z.object({});
+export const TurnCompletedPayload = z.object({
+  usage: z.object({
+    prompt_tokens: z.number().int(),
+    completion_tokens: z.number().int(),
+    cached_tokens: z.number().int().optional(),
+  }),
+  cost_estimate: z.number().optional(),
+  model: z.string(),
+});
+export const TurnAbortedPayload = z.object({ reason: z.string() });
+export const SessionStatusChangedPayload = z.object({ status: SessionStatus });
+export const ErrorOccurredPayload = z.object({
+  scope: z.string(),
+  message: z.string(),
+  retryable: z.boolean(),
+});
+
+// ---------- 事件类型注册表 ----------
+export const EventPayloads = {
+  "session.created": SessionCreatedPayload,
+  "session.config_changed": SessionConfigChangedPayload,
+  "session.forked": SessionForkedPayload,
+  "session.archived": SessionArchivedPayload,
+  "message.user": MessageUserPayload,
+  "message.assistant.delta": AssistantDeltaPayload,
+  "message.assistant.thinking_delta": AssistantThinkingDeltaPayload,
+  "message.assistant.completed": AssistantCompletedPayload,
+  "tool.call.proposed": ToolCallProposedPayload,
+  "approval.requested": ApprovalRequestedPayload,
+  "approval.resolved": ApprovalResolvedPayload,
+  "tool.call.started": ToolCallStartedPayload,
+  "tool.call.output_delta": ToolCallOutputDeltaPayload,
+  "tool.call.completed": ToolCallCompletedPayload,
+  "tool.call.failed": ToolCallFailedPayload,
+  "context.request.assembled": ContextAssembledPayload,
+  "context.compacted": ContextCompactedPayload,
+  "memory.written": MemoryWrittenPayload,
+  "subagent.started": SubagentStartedPayload,
+  "subagent.completed": SubagentCompletedPayload,
+  "turn.started": TurnStartedPayload,
+  "turn.completed": TurnCompletedPayload,
+  "turn.aborted": TurnAbortedPayload,
+  "session.status_changed": SessionStatusChangedPayload,
+  "error.occurred": ErrorOccurredPayload,
+} as const;
+
+export type EventType = keyof typeof EventPayloads;
+export type PayloadOf<T extends EventType> = z.infer<(typeof EventPayloads)[T]>;
+
+// ---------- 事件信封 ----------
+export const EventEnvelope = z.object({
+  event_id: z.string().uuid(),
+  session_id: z.string(),
+  seq: z.number().int().nonnegative(),
+  ts: z.number().int(),
+  type: z.string(),
+  actor: Actor,
+  turn_id: z.string().nullable(),
+  causation_id: z.string().nullable(),
+  payload: z.record(z.string(), z.unknown()),
+});
+export type AgentEvent<T extends EventType = EventType> = Omit<
+  z.infer<typeof EventEnvelope>,
+  "type" | "payload"
+> & {
+  type: T;
+  payload: PayloadOf<T>;
+};
+
+/** append 时的输入：seq 由存储层在事务内分配 */
+export type EventInput<T extends EventType = EventType> = {
+  session_id: string;
+  type: T;
+  actor: Actor;
+  turn_id?: string | null;
+  causation_id?: string | null;
+  payload: PayloadOf<T>;
+};
+
+// ---------- 会话记录 ----------
+export const SessionRecord = z.object({
+  session_id: z.string(),
+  title: z.string(),
+  cwd: z.string(),
+  mode: SessionMode,
+  model: z.string(),
+  sandbox_level: SandboxLevel,
+  created_at: z.number().int(),
+  archived: z.boolean(),
+  forked_from: z.string().nullable(),
+  caller_identity: z.string(),
+  status: SessionStatus,
+  last_seq: z.number().int(),
+  /** v1.1 新增：累计 token 用量（由 turn.completed 聚合） */
+  usage: z
+    .object({ prompt_tokens: z.number().int(), completion_tokens: z.number().int() })
+    .optional(),
+});
+export type SessionRecord = z.infer<typeof SessionRecord>;

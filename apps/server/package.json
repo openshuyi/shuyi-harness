@@ -1,0 +1,18 @@
+{
+  "name": "@shuyi/server",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --hot src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "hono": "^4.6.0",
+    "zod": "^4.1.0",
+    "@modelcontextprotocol/sdk": "^1.18.0",
+    "@shuyi/types": "*"
+  },
+  "devDependencies": {
+    "typescript-language-server": "^4.3.3"
+  }
+}

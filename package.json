@@ -1,0 +1,21 @@
+{
+  "name": "shuyi-harness",
+  "version": "0.2.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "bun run --cwd apps/server dev",
+    "dev:web": "bun run --cwd apps/web dev",
+    "build:web": "cd apps/web && vite build",
+    "build:binary": "bun build --compile apps/server/src/index.ts --outfile agent-bin",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.6.0"
+  }
+}
