@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SessionRecord } from "@shuyi/types";
 import { useSessionStore } from "../core/store.js";
+import { fetchJson, fetchJsonArray } from "../core/api.js";
 
 interface SearchHit {
   session_id: string;
@@ -13,8 +14,7 @@ interface SearchHit {
 }
 
 async function fetchSessions(): Promise<SessionRecord[]> {
-  const res = await fetch("/api/sessions");
-  return res.json();
+  return fetchJsonArray<SessionRecord>("/api/sessions");
 }
 
 export function SessionList() {
@@ -23,26 +23,31 @@ export function SessionList() {
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
 
-  const { data: sessions = [] } = useQuery({
+  const {
+    data: sessions = [],
+    error: sessionsError,
+    isError: sessionsFailed,
+  } = useQuery({
     queryKey: ["sessions"],
     queryFn: fetchSessions,
     refetchInterval: 5000,
+    retry: 1,
   });
 
   const { data: hits = [] } = useQuery<SearchHit[]>({
     queryKey: ["search", query],
-    queryFn: async () => (await fetch(`/api/search?q=${encodeURIComponent(query)}`)).json(),
+    queryFn: async () => fetchJsonArray<SearchHit>(`/api/search?q=${encodeURIComponent(query)}`),
     enabled: searching && query.trim().length > 0,
+    retry: 1,
   });
 
   const createMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/sessions", {
+      return fetchJson<SessionRecord>("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ cwd: "/mnt/agents/output" }),
       });
-      return res.json() as Promise<SessionRecord>;
     },
     onSuccess: (session) => {
       void queryClient.invalidateQueries({ queryKey: ["sessions"] });
@@ -85,6 +90,15 @@ export function SessionList() {
         />
       </div>
       <div className="session-list">
+        {sessionsFailed && (
+          <div style={{ padding: 12, fontSize: 12, color: "#f87171" }}>
+            无法连接后端服务（localhost:3210）。
+            <br />
+            {sessionsError instanceof Error ? sessionsError.message : String(sessionsError)}
+            <br />
+            请确认 server 已启动；若使用代理/VPN 软件或浏览器扩展，请将 localhost 加入直连白名单。
+          </div>
+        )}
         {searching && query.trim() ? (
           <>
             <div className="search-hint">{hits.length} 条命中</div>

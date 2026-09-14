@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { ModelInfo } from "@shuyi/types";
 import { useSessionStore } from "../core/store.js";
+import { fetchJsonArray } from "../core/api.js";
 
 export function Composer() {
   const { current, trajectory, sendMessage, abort, setMode, setModel } = useSessionStore();
@@ -10,7 +11,13 @@ export function Composer() {
 
   const { data: models = [] } = useQuery<ModelInfo[]>({
     queryKey: ["models"],
-    queryFn: async () => (await fetch("/api/models")).json(),
+    queryFn: async () => {
+      try {
+        return await fetchJsonArray<ModelInfo>("/api/models");
+      } catch {
+        return [];
+      }
+    },
   });
 
   if (!current) return null;

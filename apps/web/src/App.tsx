@@ -4,6 +4,7 @@ import { SessionList } from "./components/SessionList.js";
 import { Trajectory } from "./components/Trajectory.js";
 import { Composer } from "./components/Composer.js";
 import { ApprovalDialog } from "./components/ApprovalDialog.js";
+import { ErrorBoundary } from "./components/ErrorBoundary.js";
 import { useSessionStore } from "./core/store.js";
 
 export default function App() {
@@ -19,10 +20,16 @@ export default function App() {
 
   return (
     <div className="app">
-      <SessionList />
+      <ErrorBoundary name="会话列表">
+        <SessionList />
+      </ErrorBoundary>
       <div className="main">
-        <Trajectory />
-        <Composer />
+        <ErrorBoundary name="对话区">
+          <Trajectory />
+        </ErrorBoundary>
+        <ErrorBoundary name="输入区">
+          <Composer />
+        </ErrorBoundary>
       </div>
       <ApprovalDialog />
     </div>
