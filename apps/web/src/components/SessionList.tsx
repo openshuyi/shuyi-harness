@@ -92,7 +92,7 @@ export function SessionList() {
       <div className="session-list">
         {sessionsFailed && (
           <div style={{ padding: 12, fontSize: 12, color: "#f87171" }}>
-            无法连接后端服务（localhost:3210）。
+            无法连接后端服务（localhost:4291）。
             <br />
             {sessionsError instanceof Error ? sessionsError.message : String(sessionsError)}
             <br />

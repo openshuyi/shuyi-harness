@@ -27,12 +27,12 @@ shuyi-harness/
 # 安装依赖（workspaces；npm 亦可）
 bun install        # 或 npm install
 
-# 终端 1：启动 Agent Server（默认端口 3210）
+# 终端 1：启动 Agent Server（默认端口 4291）
 bun run dev:server
 
-# 终端 2：启动 Web 开发服务器（端口 5173，代理 /api 到 3210）
+# 终端 2：启动 Web 开发服务器（端口 4290，代理 /api 到 4291）
 bun run dev:web
-# 打开 http://localhost:5173
+# 打开 http://localhost:4290
 ```
 
 生产模式（单进程单端口）：
@@ -40,7 +40,7 @@ bun run dev:web
 ```bash
 bun run build:web
 bun run --cwd apps/server start
-# 打开 http://localhost:3210
+# 打开 http://localhost:4291
 ```
 
 ## 体验路径（内置 Mock 模型，无需 API key）

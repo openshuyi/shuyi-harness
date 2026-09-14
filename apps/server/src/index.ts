@@ -2,7 +2,7 @@
  * Agent Server 入口：装配各模块，启动 Hono。
  * 环境变量：
  *   AGENT_DB           SQLite 路径（默认 ~/.agent/agent.db）
- *   AGENT_PORT         端口（默认 3210）
+ *   AGENT_PORT         端口（默认 4291）
  *   AGENT_MODELS       模型配置（见 model/index.ts）
  *   AGENT_MCP_CONFIG   MCP 配置路径（默认 ~/.agent/mcp.json）
  *   AGENT_CONTEXT_WINDOW 上下文窗口 token 数（默认 128000，压缩阈值=75%）
@@ -21,7 +21,7 @@ import { connectMcpServers } from "./mcp/index.js";
 
 const HOME = process.env.HOME ?? "/root";
 const dbPath = process.env.AGENT_DB ?? path.join(HOME, ".agent", "agent.db");
-const port = Number(process.env.AGENT_PORT ?? 3210);
+const port = Number(process.env.AGENT_PORT ?? 4291);
 
 const bus = new EventBus();
 const store = new SqliteEventStore(dbPath, bus);
