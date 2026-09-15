@@ -19,6 +19,8 @@ import { RuntimeModelRegistry } from "./model/registry.js";
 import { SessionManager } from "./session/manager.js";
 import { createApi } from "./api/index.js";
 import { connectMcpServers } from "./mcp/index.js";
+import { AgentRegistry } from "./agents/index.js";
+import { enrichFromModelsDev } from "./model/modelsdev.js";
 
 const HOME = process.env.HOME ?? "/root";
 const dbPath = process.env.AGENT_DB ?? path.join(HOME, ".agent", "agent.db");
@@ -30,8 +32,14 @@ const bus = new EventBus();
 const store = new SqliteEventStore(dbPath, bus);
 const tools = await createFullRegistry();
 const models = new RuntimeModelRegistry(process.env, modelsConfigFile);
-const sessions = new SessionManager(store, tools, models);
-const app = createApi({ store, bus, sessions, models });
+const agents = new AgentRegistry();
+const sessions = new SessionManager(store, tools, models, agents);
+const app = createApi({ store, bus, sessions, models, agents });
+
+// P8-6：启动时用 models.dev 元数据补全缺失的上下文窗口/定价（后台异步，失败静默）
+void enrichFromModelsDev(models).then((n) => {
+  if (n > 0) console.log(`[model] models.dev 元数据已补全 ${n} 个模型的窗口/定价`);
+}).catch(() => {});
 
 // MCP：连接外部工具 server（失败只告警，不影响主流程）
 const mcp = await connectMcpServers(tools);

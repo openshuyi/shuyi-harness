@@ -295,3 +295,28 @@ describe("P7：会话回滚", () => {
     fs.rmSync(ws, { recursive: true, force: true });
   });
 });
+
+describe("P8：编辑后 LSP 诊断折回", () => {
+  test("写入含类型错误的 ts 文件后，工具结果自动附诊断；干净文件不附", async () => {
+    const { postEditDiagnostics } = await import("../src/lsp/post-edit.js");
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "agent-lsp-fold-"));
+    // 初始化一个最小 ts 项目
+    fs.writeFileSync(path.join(ws, "tsconfig.json"), JSON.stringify({ compilerOptions: { strict: true } }));
+    fs.writeFileSync(path.join(ws, "bad.ts"), "const x: number = 'not a number';\nexport default x;\n");
+    fs.writeFileSync(path.join(ws, "good.ts"), "const y: number = 42;\nexport default y;\n");
+
+    const bad = await postEditDiagnostics(ws, [path.join(ws, "bad.ts")], 8000);
+    if (bad === null) {
+      // 环境无 typescript-language-server：优雅降级（返回 null），跳过断言
+      console.log("[skip] LSP 不可用，降级验证通过");
+    } else {
+      expect(bad).toContain("LSP 诊断");
+      expect(bad.toLowerCase()).toContain("error");
+    }
+    const good = await postEditDiagnostics(ws, [path.join(ws, "good.ts")], 8000);
+    expect(good).toBeNull(); // 干净文件不附加任何内容
+    // 非 ts 文件直接 null
+    expect(await postEditDiagnostics(ws, [path.join(ws, "readme.txt")])).toBeNull();
+    fs.rmSync(ws, { recursive: true, force: true });
+  }, 20000);
+});

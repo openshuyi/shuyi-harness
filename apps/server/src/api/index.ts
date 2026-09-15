@@ -18,12 +18,16 @@ import type { EventBus } from "../bus/index.js";
 import type { SessionManager } from "../session/manager.js";
 import type { RuntimeModelRegistry, AddModelInput } from "../model/registry.js";
 import { renderReplayHtml } from "./replay.js";
+import type { AgentRegistry } from "../agents/index.js";
+import { loadProjectConfig } from "../config/project.js";
+import { enrichFromModelsDev } from "../model/modelsdev.js";
 
 export interface ApiDeps {
   store: EventStore;
   bus: EventBus;
   sessions: SessionManager;
   models: RuntimeModelRegistry;
+  agents: AgentRegistry;
 }
 
 export function createApi(deps: ApiDeps): Hono {
@@ -38,7 +42,13 @@ export function createApi(deps: ApiDeps): Hono {
   // ---------- 会话 ----------
   app.post("/api/sessions", async (c) => {
     const body = CreateSessionRequest.parse(await c.req.json());
-    const session = deps.sessions.createSession(body);
+    // 模型分层解析（P8-5）：显式指定 → 项目 shuyi.json → 注册表默认
+    let model = body.model;
+    if (!model) {
+      const configured = loadProjectConfig(body.cwd).model;
+      model = configured && deps.models.get(configured) ? configured : deps.models.defaultModel;
+    }
+    const session = deps.sessions.createSession({ ...body, model });
     return c.json(session, 201);
   });
 
@@ -140,6 +150,12 @@ export function createApi(deps: ApiDeps): Hono {
     });
   });
 
+  // ---------- 代理定义（P8-3） ----------
+  app.get("/api/agents", (c) => {
+    const cwd = c.req.query("cwd") || undefined;
+    return c.json(deps.agents.list(cwd));
+  });
+
   // ---------- 模型 ----------
   app.get("/api/models", (c) => {
     return c.json(deps.models.list());
@@ -152,6 +168,10 @@ export function createApi(deps: ApiDeps): Hono {
     }
     try {
       const item = deps.models.add(body);
+      // P8-6：未显式提供窗口/定价时，后台用 models.dev 元数据补全（走 24h 缓存）
+      if (!body.contextWindow || !body.pricing) {
+        void enrichFromModelsDev(deps.models).catch(() => {});
+      }
       return c.json(item, 201);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);

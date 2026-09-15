@@ -16,6 +16,7 @@ import type { EventStore } from "../store/event-store.js";
 import type { ModelAdapter, ChatMessage } from "../model/types.js";
 import type { ToolRegistry } from "../tools/index.js";
 import { buildSystemPrefix } from "../context/index.js";
+import type { AgentDefinition } from "../agents/index.js";
 
 const MAX_ITERATIONS = 15;
 const SUBAGENT_TIMEOUT_MS = 180_000;
@@ -28,7 +29,12 @@ export async function runSubagent(
   tools: ToolRegistry,
   store: EventStore,
   turnId: string,
+  /** P8-3：代理定义（系统提示 + 工具面）；缺省等同内置 explore */
+  agent?: AgentDefinition,
+  /** P8-3：代理定义指定 model 时，从注册表解析对应适配器 */
+  models?: { get(id: string): ModelAdapter | undefined },
 ): Promise<string> {
+  const subAdapter = (agent?.model ? models?.get(agent.model) : undefined) ?? adapter;
   store.append({
     session_id: session.session_id,
     type: "subagent.started",
@@ -40,17 +46,24 @@ export async function runSubagent(
   let finalSummary = "(子代理异常结束)";
 
   try {
-    // 子代理工具面：只读
-    const readOnlySpecs = tools
+    // 子代理工具面：默认只读；代理定义可收窄到显式名单。
+    // 安全约束不变：无论定义如何声明，写工具都不会进入子代理工具面
+    // （子代理直接执行工具、无审批流，写操作必须由主代理决定后执行）。
+    let subSpecs = tools
       .toModelSpecs("build")
       .filter((s) => {
         const t = tools.get(s.name);
         return t?.permission === "always-allow" && s.name !== "task" && s.name !== "memory_write";
       });
+    if (agent && Array.isArray(agent.tools)) {
+      const allow = new Set(agent.tools);
+      subSpecs = subSpecs.filter((s) => allow.has(s.name));
+    }
 
-    const system =
-      buildSystemPrefix({ mode: "plan", tools: readOnlySpecs }) +
-      "\n\n你是一个子代理。独立完成下面的任务，直接给出浓缩的最终结论（不超过 800 字），不要复述过程。";
+    const rolePrompt =
+      agent?.system ??
+      "你是一个子代理。独立完成下面的任务，直接给出浓缩的最终结论（不超过 800 字），不要复述过程。";
+    const system = buildSystemPrefix({ mode: "plan", tools: subSpecs }) + "\n\n" + rolePrompt;
 
     const messages: ChatMessage[] = [{ role: "user", content: task }];
     const controller = new AbortController();
@@ -58,8 +71,8 @@ export async function runSubagent(
 
     try {
       for (let i = 0; i < MAX_ITERATIONS; i++) {
-        const result = await adapter.streamChat(
-          { model: session.model, system, messages, tools: readOnlySpecs },
+        const result = await subAdapter.streamChat(
+          { model: agent?.model ?? session.model, system, messages, tools: subSpecs },
           {},
           controller.signal,
         );

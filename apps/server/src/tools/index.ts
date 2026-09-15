@@ -8,7 +8,7 @@
 import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { bashTool, bashStatusTool, bashKillTool } from "./bash.js";
 
 export interface ToolContext {
   sessionId: string;
@@ -17,8 +17,8 @@ export interface ToolContext {
   onOutputChunk?: (chunk: string) => void;
   /** memory_write 落盘后回调（写 memory.written 事件） */
   onMemoryWritten?: (file: string, excerpt: string, reason: string) => void;
-  /** task 工具：派生子代理（上下文隔离，返回浓缩结论）。由 Loop 注入。 */
-  spawnSubagent?: (task: string, parentCallId: string) => Promise<string>;
+  /** task 工具：派生子代理（上下文隔离，返回浓缩结论）。由 Loop 注入；agentName 指定代理定义。 */
+  spawnSubagent?: (task: string, parentCallId: string, agentName?: string) => Promise<string>;
 }
 
 export interface ToolResult {
@@ -28,6 +28,8 @@ export interface ToolResult {
     files_written?: string[];
     diff?: string;
     commit?: string;
+    /** bash background 派生的后台任务 id */
+    background_task?: string;
   };
 }
 
@@ -142,49 +144,6 @@ const editTool: ToolDefinition = {
   },
 };
 
-// ---------- bash ----------
-const bashTool: ToolDefinition = {
-  name: "bash",
-  description: "在工作目录中执行 shell 命令。默认需要用户逐条批准。",
-  permission: "always-ask",
-  argsSchema: z.object({
-    command: z.string(),
-    timeout_ms: z.number().int().max(120000).default(30000),
-  }),
-  riskSummary: (args) => `执行命令: ${args.command}`,
-  async execute(args, ctx) {
-    const command = args.command as string;
-    const timeout = (args.timeout_ms as number) ?? 30000;
-    return new Promise<ToolResult>((resolvePromise, reject) => {
-      const proc = spawn("bash", ["-c", command], { cwd: ctx.cwd });
-      let out = "";
-      const onData = (chunk: Buffer) => {
-        const s = chunk.toString();
-        out += s;
-        ctx.onOutputChunk?.(s);
-      };
-      proc.stdout.on("data", onData);
-      proc.stderr.on("data", onData);
-      const timer = setTimeout(() => {
-        proc.kill("SIGTERM");
-        reject(new Error(`命令超时（${timeout}ms）`));
-      }, timeout);
-      proc.on("close", (code) => {
-        clearTimeout(timer);
-        const { result, truncated } = truncate(out || "(无输出)");
-        resolvePromise({
-          result: `[退出码 ${code}]\n${result}`,
-          truncated,
-        });
-      });
-      proc.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-    });
-  },
-};
-
 // ---------- glob ----------
 const globTool: ToolDefinition = {
   name: "glob",
@@ -287,14 +246,15 @@ const memoryWriteTool: ToolDefinition = {
 const taskTool: ToolDefinition = {
   name: "task",
   description:
-    "把独立的子任务派给子代理：它拥有全新上下文窗口，内部完成多步探索，只把浓缩结论带回。适合大范围搜索、阅读多个文件后的归纳。禁止在子任务中再派生子代理。",
+    "把独立的子任务派给子代理：它拥有全新上下文窗口，内部完成多步探索，只把浓缩结论带回。适合大范围搜索、阅读多个文件后的归纳。可用 agent 参数指定代理定义（默认 explore，可用 ~/.agent/agents/*.md 自定义）。禁止在子任务中再派生子代理。",
   permission: "always-allow",
   argsSchema: z.object({
     prompt: z.string().describe("给子代理的完整任务描述（它看不到当前对话，必须自包含）"),
+    agent: z.string().optional().describe("代理定义名（如 explore），缺省为 explore"),
   }),
   async execute(args, ctx) {
     if (!ctx.spawnSubagent) throw new Error("子代理不可用");
-    const summary = await ctx.spawnSubagent(args.prompt as string, "");
+    const summary = await ctx.spawnSubagent(args.prompt as string, "", args.agent as string | undefined);
     return truncate(summary);
   },
 };
@@ -333,7 +293,7 @@ export class ToolRegistry {
 
 export function createDefaultRegistry(): ToolRegistry {
   const r = new ToolRegistry();
-  for (const t of [readTool, writeTool, editTool, bashTool, globTool, grepTool, memoryWriteTool, taskTool]) {
+  for (const t of [readTool, writeTool, editTool, bashTool, bashStatusTool, bashKillTool, globTool, grepTool, memoryWriteTool, taskTool]) {
     r.register(t);
   }
   return r;

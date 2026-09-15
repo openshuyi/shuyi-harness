@@ -74,14 +74,50 @@ bun run dev:server
 
 模型层自带：429/5xx 指数退避重试（最多 4 次）、流式中断自动恢复、
 按定价的美元成本估算（输入/输出/缓存命中分别计价，显示在侧栏与输入区）。
+未显式配置上下文窗口/定价时，服务端自动从 models.dev 元数据补全（24h 缓存，离线回退）。
+
+## 项目级配置与自定义代理
+
+**`shuyi.json`**（项目根目录；全局默认值放 `~/.agent/shuyi.json`，项目覆盖全局）：
+
+```json
+{
+  "model": "deepseek",
+  "instructions": ["使用 pnpm 而不是 npm", "不要改动 src/legacy 目录"],
+  "permissions": { "allow": ["read", "glob"], "deny": ["bash"] },
+  "auto_title": true
+}
+```
+
+- `model`：新会话默认模型（显式选择 > 项目配置 > 注册表默认）
+- `instructions`：注入系统提示的项目指令（AGENTS.md 的轻量替代）
+- `permissions`：会话开始时预置的放行/拒绝规则
+- `auto_title`：首轮完成后自动命名会话（默认开启）
+
+**自定义代理**（`~/.agent/agents/*.md` 全局，`<cwd>/.agent/agents/*.md` 项目，同名覆盖内置）：
+
+```markdown
+---
+name: explore
+description: 代码库探索子代理
+tools: readonly        # readonly | all | [read, grep]
+model: deepseek        # 可选：覆盖会话模型
+---
+你是探索代理的系统提示……
+```
+
+task 工具用 `agent` 参数指定代理定义（默认 `explore`）；内置 `title` 代理负责自动标题。
+安全约束不变：子代理工具面始终只读，写操作由主代理决定后执行。
 
 ## 测试
 
 ```bash
-bun test            # 36 个用例（5 个文件）：工具执行 / 审批批准与拒绝 / 权限拒绝 /
+bun test            # 56 个用例（7 个文件）：工具执行 / 审批批准与拒绝 / 权限拒绝 /
                     # 上下文重建配对 / 崩溃恢复 / 分叉 / seq 无空洞 /
                     # git 提交 / Plan 模式 / 记忆 / 压缩 / 子代理 / MCP / LSP / 搜索 / 用量 /
-                    # 模型注册表 / 重试退避 / 成本估算 / 纠错回环 / 回放导出 / 会话回滚
+                    # 模型注册表 / 重试退避 / 成本估算 / 纠错回环 / 回放导出 / 会话回滚 /
+                    # bash 输出压缩 / 后台任务 / LSP 编辑后诊断 / 代理定义 / 自动标题 /
+                    # 项目配置 / models.dev 元数据
 bun run typecheck   # 全量类型检查
 ```
 
@@ -133,11 +169,13 @@ SQLite 事件日志（append-only，唯一事实来源）
 
 ## 当前状态与 roadmap
 
-已完成（v0.4）：P0 骨架、P1 安全基线（含 git 原子提交）、P2 上下文工程
+已完成（v0.5）：P0 骨架、P1 安全基线（含 git 原子提交）、P2 上下文工程
 （结构化压缩 / 记忆 / Plan/Build 工具面）、P3 能力扩展（LSP / MCP / 子代理）、
 P4 主体（全文搜索 / 用量统计 / 二进制分发）、P5 模型实战化（多 provider /
 运行时模型管理 / 失败重试 / 成本估算）、P6 质量与可观测性（Trajectory 来源过滤 /
 批量审批 / 纠错回环 / 回放导出 / CI）、P7 能力深化（会话回滚 / 附件 /
-headless 模式）、深色浅色双主题。
+headless 模式）、深色浅色双主题、P8 对齐 OpenCode/DeepSeek Harness
+（编辑后 LSP 诊断回注 / bash 输出压缩与后台任务 / 声明式代理定义 /
+自动标题 / 项目级 shuyi.json / models.dev 元数据）。
 待做：真实模型长任务调优、团队版三挂钩的中心化实现（身份 / 存储 / 审计）。
 详见 docs 中开发计划文档。

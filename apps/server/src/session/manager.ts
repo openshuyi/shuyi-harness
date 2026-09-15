@@ -14,6 +14,8 @@ import { PermissionService as PermissionServiceImpl } from "../permission/index.
 import type { RuntimeModelRegistry } from "../model/registry.js";
 import { runTurn } from "../loop/index.js";
 import { rollbackTo } from "../git/index.js";
+import { AgentRegistry } from "../agents/index.js";
+import { loadProjectConfig } from "../config/project.js";
 
 interface PendingApproval {
   resolve: (r: { decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string }) => void;
@@ -31,6 +33,8 @@ export class SessionManager {
     private store: EventStore,
     private tools: ToolRegistry,
     private models: RuntimeModelRegistry,
+    /** P8-3：代理定义注册表（task 工具 / 自动标题共用） */
+    private agents: AgentRegistry = new AgentRegistry(),
   ) {}
 
   createSession(opts: {
@@ -120,6 +124,11 @@ export class SessionManager {
       : text;
 
     const permission = this.permissionFor(sessionId);
+    // P8-5：项目级预置权限规则（shuyi.json permissions）在轮次开始前应用
+    const projectCfg = loadProjectConfig(session.cwd);
+    for (const name of projectCfg.permissions?.allow ?? []) permission.rememberRule(name, "allow");
+    for (const name of projectCfg.permissions?.deny ?? []) permission.rememberRule(name, "deny");
+
     const controller = new AbortController();
     this.abortControllers.set(sessionId, controller);
 
@@ -127,9 +136,60 @@ export class SessionManager {
       store: this.store,
       tools: this.tools,
       waitForApproval: (sid, approvalId) => this.waitForApproval(sid, approvalId),
+      agents: this.agents,
+      models: this.models,
     }, controller.signal).finally(() => {
       this.abortControllers.delete(sessionId);
+      // P8-4：首轮完成后自动生成会话标题（失败静默，不影响主流程）
+      void this.maybeAutoTitle(sessionId, projectCfg.auto_title);
     });
+  }
+
+  /**
+   * 自动标题（P8-4）：首轮完成后，用内置 title 代理据首条用户消息生成短标题。
+   * 仅在标题仍为默认值、且恰好完成一轮时触发；mock 模型跳过。
+   */
+  private async maybeAutoTitle(sessionId: string, autoTitleCfg?: boolean): Promise<void> {
+    try {
+      if (autoTitleCfg === false) return;
+      const session = this.store.getSession(sessionId);
+      if (!session || !/^会话 \d/.test(session.title)) return;
+      const events = this.store.readSince(sessionId, -1);
+      const userMsgs = events.filter((e) => e.type === "message.user");
+      const completedTurns = events.filter((e) => e.type === "turn.completed").length;
+      if (userMsgs.length !== 1 || completedTurns !== 1) return;
+      const adapter = this.models.get(session.model);
+      if (!adapter || adapter.meta.provider === "local") return; // mock 不生成标题
+      const titleAgent = this.agents.get("title", session.cwd);
+      const firstUser = (userMsgs[0].payload as { text: string }).text.slice(0, 500);
+      const result = await adapter.streamChat(
+        {
+          model: session.model,
+          system:
+            titleAgent?.system ??
+            "根据用户的请求，生成一个不超过 15 个字的简短中文标题。只输出标题本身。",
+          messages: [{ role: "user", content: firstUser }],
+          tools: [],
+        },
+        {},
+        AbortSignal.timeout(30_000),
+      );
+      const title = result.text
+        .trim()
+        .split("\n")[0]
+        .replace(/^["'「『]+|["'」』。．.]+$/g, "")
+        .slice(0, 30);
+      if (!title) return;
+      this.store.updateSessionConfig(sessionId, { title });
+      this.store.append({
+        session_id: sessionId,
+        type: "session.titled",
+        actor: "system",
+        payload: { title },
+      });
+    } catch {
+      // 标题生成失败不影响会话
+    }
   }
 
   abort(sessionId: string): void {

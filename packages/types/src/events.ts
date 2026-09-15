@@ -153,6 +153,8 @@ export const TurnRollbackPayload = z.object({
   turns_reverted: z.number().int().optional(),
 });
 export const SessionStatusChangedPayload = z.object({ status: SessionStatus });
+/** 自动标题（P8-4）：首轮结束后由 title 代理生成 */
+export const SessionTitledPayload = z.object({ title: z.string() });
 export const ErrorOccurredPayload = z.object({
   scope: z.string(),
   message: z.string(),
@@ -186,6 +188,7 @@ export const EventPayloads = {
   "turn.aborted": TurnAbortedPayload,
   "turn.rollback": TurnRollbackPayload,
   "session.status_changed": SessionStatusChangedPayload,
+  "session.titled": SessionTitledPayload,
   "error.occurred": ErrorOccurredPayload,
 } as const;
 

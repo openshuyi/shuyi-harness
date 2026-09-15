@@ -6,7 +6,8 @@ export const CreateSessionRequest = z.object({
   title: z.string().optional(),
   cwd: z.string(),
   mode: SessionMode.default("build"),
-  model: z.string().default("mock"),
+  /** 缺省由服务端按 项目 shuyi.json → 注册表默认 解析（P8-5） */
+  model: z.string().optional(),
   sandbox_level: SandboxLevel.default("workspace"),
 });
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequest>;

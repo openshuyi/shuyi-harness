@@ -86,6 +86,8 @@ export function rebuildContext(
   store: EventStore,
   session: SessionRecord,
   tools: ToolSpec[],
+  /** P8-5：追加到系统提示尾部的项目指令（shuyi.json instructions） */
+  systemSuffix?: string,
 ): RebuildResult & { system: string } {
   const events = store.readSince(session.session_id, -1);
 
@@ -117,8 +119,9 @@ export function rebuildContext(
   //    OpenAI 协议要求每个 tool_call 都有对应 tool 消息，否则请求报错。
   patchUnpairedToolCalls(messages);
 
+  const baseSystem = buildSystemPrefix({ mode: session.mode, tools });
   return {
-    system: buildSystemPrefix({ mode: session.mode, tools }),
+    system: systemSuffix ? `${baseSystem}\n\n## 项目指令\n${systemSuffix}` : baseSystem,
     messages,
     coversUntilSeq,
     compacted: compactionSummary !== null,

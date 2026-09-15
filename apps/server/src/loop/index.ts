@@ -20,6 +20,10 @@ import {
 import { compactSession } from "../context/compaction.js";
 import { runSubagent } from "./subagent.js";
 import { ensureRepo, commitFiles, headCommit } from "../git/index.js";
+import { postEditDiagnostics } from "../lsp/post-edit.js";
+import type { AgentRegistry } from "../agents/index.js";
+import type { ModelAdapter as ModelAdapterT } from "../model/types.js";
+import { loadProjectConfig } from "../config/project.js";
 
 export interface LoopDeps {
   store: EventStore;
@@ -29,6 +33,10 @@ export interface LoopDeps {
     sessionId: string,
     approvalId: string,
   ) => Promise<{ decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string }>;
+  /** P8-3：代理定义注册表（task 工具的 agent 参数解析） */
+  agents?: AgentRegistry;
+  /** P8-3：代理定义指定 model 时解析适配器 */
+  models?: { get(id: string): ModelAdapterT | undefined };
 }
 
 const MAX_TOOL_ITERATIONS = 40; // 单轮工具调用上限，防失控
@@ -81,6 +89,8 @@ export async function runTurn(
 
   let totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
   let iterations = 0;
+  // P8-5：项目级指令（shuyi.json）注入系统提示尾部，每轮加载一次
+  const projectInstructions = loadProjectConfig(session.cwd).instructions;
 
   try {
     for (;;) {
@@ -90,7 +100,7 @@ export async function runTurn(
       // 模式决定工具面（Loop 不变）：plan 模式只暴露只读工具
       const specs = tools.toModelSpecs(session.mode);
       const memory = readMemory(session.cwd);
-      let { system, messages } = rebuildContext(store, session, specs);
+      let { system, messages } = rebuildContext(store, session, specs, projectInstructions);
       let allMessages = assembleWithMemory(messages, memory);
       let tokenEstimate =
         estimateTokens(system) + estimateMessagesTokens(allMessages);
@@ -98,7 +108,7 @@ export async function runTurn(
       // ---- 压缩：填充 ~75% 触发，压缩后重建再继续 ----
       if (shouldCompact(tokenEstimate, contextWindow())) {
         await compactSession(store, sid, turnId, allMessages, adapter);
-        ({ system, messages } = rebuildContext(store, session, specs));
+        ({ system, messages } = rebuildContext(store, session, specs, projectInstructions));
         allMessages = assembleWithMemory(messages, memory);
         tokenEstimate = estimateTokens(system) + estimateMessagesTokens(allMessages);
       }
@@ -335,13 +345,24 @@ export async function runTurn(
               causation_id: proposedEvent.event_id,
               payload: { file, excerpt, reason },
             }),
-          spawnSubagent: (task, parentCallId) =>
-            runSubagent(task, parentCallId || call.id, session, adapter, tools, store, turnId),
+          spawnSubagent: (task, parentCallId, agentName) =>
+            runSubagent(
+              task,
+              parentCallId || call.id,
+              session,
+              adapter,
+              tools,
+              store,
+              turnId,
+              deps.agents?.get(agentName ?? "explore", session.cwd),
+              deps.models,
+            ),
         };
         try {
           const out = await tool.execute(args, toolCtx);
           // git 原子提交（撤销机制）：写入类工具成功后提交
           let commit: string | undefined;
+          let result = out.result;
           if (repoReady && out.sideEffects?.files_written?.length) {
             commit =
               commitFiles(
@@ -349,6 +370,12 @@ export async function runTurn(
                 out.sideEffects.files_written,
                 `agent(${call.name}): ${out.sideEffects.files_written.length} 个文件`,
               ) ?? undefined;
+          }
+          // 编辑后 LSP 诊断折回（OpenCode 同款）：写入 ts/js 文件后自动检查，
+          // 诊断随工具结果当轮折回，模型立即看到自己写出的类型错误
+          if (out.sideEffects?.files_written?.length) {
+            const diagNote = await postEditDiagnostics(session.cwd, out.sideEffects.files_written);
+            if (diagNote) result += diagNote;
           }
           store.append({
             session_id: sid,
@@ -358,7 +385,7 @@ export async function runTurn(
             causation_id: proposedEvent.event_id,
             payload: {
               call_id: call.id,
-              result: out.result,
+              result,
               truncated: out.truncated,
               duration_ms: Date.now() - startedAt,
               side_effects: { ...out.sideEffects, commit },

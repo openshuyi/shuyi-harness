@@ -250,6 +250,9 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
     case "session.status_changed":
       return { ...s, status: p.status as SessionStatus };
 
+    case "session.titled":
+      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `会话已命名为：${p.title}`, tone: "info" }] };
+
     default:
       return s;
   }
