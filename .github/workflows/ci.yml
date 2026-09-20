@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - name: Install dependencies
+        run: bun install --no-save 2>/dev/null || npm install --no-package-lock
+
+      - name: Typecheck (server + types)
+        run: npx tsc --noEmit -p tsconfig.json
+
+      - name: Typecheck (web)
+        run: npx tsc --noEmit -p apps/web/tsconfig.json
+
+      - name: Test
+        run: bun test apps/server/test/
+
+      - name: Build web
+        run: npm run build:web
+
+      - name: Build standalone binary & smoke
+        run: |
+          bun build --compile apps/server/src/index.ts --outfile /tmp/agent-bin
+          AGENT_DB=/tmp/ci-smoke.db AGENT_MODELS_CONFIG=/tmp/ci-models.json \
+            AGENT_PORT=14291 AGENT_WEB_DIST=apps/web/dist /tmp/agent-bin &
+          BIN_PID=$!
+          sleep 3
+          # API 冒烟
+          curl -sf http://127.0.0.1:14291/api/models | grep -q mock
+          curl -sf http://127.0.0.1:14291/api/sessions | grep -q '\[\]'
+          # 静态托管冒烟
+          curl -sf http://127.0.0.1:14291/ | grep -qi html
+          kill $BIN_PID
