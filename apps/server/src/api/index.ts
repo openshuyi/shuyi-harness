@@ -75,8 +75,77 @@ export function createApi(deps: ApiDeps): Hono {
 
   app.post("/api/sessions/:id/messages", async (c) => {
     const body = PostMessageRequest.parse(await c.req.json());
-    deps.sessions.postMessage(c.req.param("id"), body.text);
-    return c.json({ ok: true }, 202);
+    const r = deps.sessions.postMessage(c.req.param("id"), body.text);
+    return c.json({ ok: true, queued: r.queued }, 202);
+  });
+
+  // ---------- v0.4：交互体验（F1–F5） ----------
+  // F1：rewind（code 恢复快照 / conversation 截断轨迹 / both）
+  app.post("/api/sessions/:id/rewind", async (c) => {
+    const body = (await c.req.json()) as { to_seq?: number; mode?: string };
+    if (typeof body?.to_seq !== "number" || !["code", "conversation", "both"].includes(body.mode ?? "")) {
+      return c.json({ error: "缺少 to_seq / mode（code|conversation|both）" }, 400);
+    }
+    try {
+      const r = deps.sessions.rewind(c.req.param("id"), body.to_seq, body.mode as "code" | "conversation" | "both");
+      return c.json({ ok: true, ...r });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+  });
+
+  // F2：变更面板
+  app.get("/api/sessions/:id/changes", (c) => {
+    try {
+      return c.json({ changes: deps.sessions.listChanges(c.req.param("id")) });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
+    }
+  });
+  app.post("/api/sessions/:id/changes/review", async (c) => {
+    const body = (await c.req.json()) as { path?: string; action?: string };
+    if (!body?.path || !["accept", "revert"].includes(body.action ?? "")) {
+      return c.json({ error: "缺少 path / action（accept|revert）" }, 400);
+    }
+    const r = deps.sessions.reviewChange(c.req.param("id"), body.path, body.action as "accept" | "revert");
+    return r.ok ? c.json(r) : c.json(r, 409);
+  });
+
+  // F4：撤回排队消息
+  app.post("/api/sessions/:id/queue/:qid/cancel", (c) => {
+    const ok = deps.sessions.cancelQueued(c.req.param("id"), c.req.param("qid"));
+    return ok ? c.json({ ok: true }) : c.json({ error: "排队消息不存在" }, 404);
+  });
+
+  // F5：批准计划（plan → build 并开工）
+  app.post("/api/sessions/:id/plan/approve", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { text?: string };
+    try {
+      deps.sessions.approvePlan(c.req.param("id"), body.text || undefined);
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+  });
+
+  // F1：turn 锚点列表（TUI /rewind 与潜在时间轴 UI 用）
+  app.get("/api/sessions/:id/turns", (c) => {
+    const session = deps.sessions.getSession(c.req.param("id"));
+    if (!session) return c.json({ error: "会话不存在" }, 404);
+    const turnSeqs = deps.store
+      .readSince(session.session_id, -1)
+      .filter((e) => e.type === "turn.started")
+      .map((e) => e.seq);
+    return c.json({ turn_seqs: turnSeqs });
+  });
+
+  // F3：@ 文件引用补全数据源
+  app.get("/api/sessions/:id/files", (c) => {
+    try {
+      return c.json({ files: deps.sessions.listFiles(c.req.param("id"), c.req.query("q") ?? "") });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
+    }
   });
 
   // P0-4a：斜杠命令清单（供前端输入 "/" 时自动补全）

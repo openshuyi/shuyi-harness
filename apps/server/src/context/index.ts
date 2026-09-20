@@ -82,6 +82,24 @@ export interface RebuildResult {
   compacted: boolean;
 }
 
+/**
+ * F1（v0.4）：会话级 rewind 截断。最后一条 mode 为 conversation/both 的
+ * session.rewound 事件决定可见水位线：seq > to_seq 的对话/工具/轮次事件不参与
+ * 上下文重建（事件本身 append-only 保留，审计可见）。
+ */
+export function rewindCutoff(events: AgentEvent[]): number {
+  let cutoff = -1;
+  for (const e of events) {
+    if (e.type !== "session.rewound") continue;
+    const p = e.payload as { to_seq: number; mode: string };
+    if (p.mode === "conversation" || p.mode === "both") cutoff = p.to_seq;
+  }
+  return cutoff;
+}
+
+/** 被 rewind 截掉的事件类型（session 系、checkpoint、hook 等系统事件保留） */
+const REWIND_HIDDEN = /^(message\.|tool\.|approval\.|turn\.|context\.|todo\.|subagent\.)/;
+
 export function rebuildContext(
   store: EventStore,
   session: SessionRecord,
@@ -89,7 +107,11 @@ export function rebuildContext(
   /** P8-5：追加到系统提示尾部的项目指令（shuyi.json instructions） */
   systemSuffix?: string,
 ): RebuildResult & { system: string } {
-  const events = store.readSince(session.session_id, -1);
+  const allEvents = store.readSince(session.session_id, -1);
+  const cutoff = rewindCutoff(allEvents);
+  const events = cutoff >= 0
+    ? allEvents.filter((e) => e.seq <= cutoff || !REWIND_HIDDEN.test(e.type))
+    : allEvents;
 
   // 1. 找最新压缩边界
   let coversUntilSeq = -1;

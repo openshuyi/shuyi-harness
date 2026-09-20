@@ -19,6 +19,8 @@ import { AgentRegistry } from "../agents/index.js";
 import { loadProjectConfig } from "../config/project.js";
 import { loadPermissionRules } from "../permission/config.js";
 import { tryExpandCommandInput, loadCommands, type CommandDefinition } from "../commands/index.js";
+import { restoreAfter, collectChanges, reviewChange } from "../checkpoint/index.js";
+import { unifiedDiff, type DiffResult } from "../checkpoint/diff.js";
 
 /** M3：审批决议（remember_pattern = 记住一条 glob 规则，粒度细于 remember_rule 的整工具放行） */
 export interface ApprovalResolution {
@@ -34,6 +36,30 @@ interface PendingApproval {
   resolve: (r: ApprovalResolution) => void;
 }
 
+/** F3（v0.4）：@路径 引用展开。单文件 8KB、总量 32KB 截断；不存在的引用保留原文 */
+export function expandFileRefs(text: string, cwd: string): string {
+  const refs = [...text.matchAll(/@([\w./\-一-龥]+)/g)].map((m) => m[1]);
+  if (refs.length === 0) return text;
+  const blocks: string[] = [];
+  let total = 0;
+  for (const ref of new Set(refs)) {
+    const abs = path.resolve(cwd, ref);
+    const rel = path.relative(cwd, abs);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) continue;
+    try {
+      if (!fs.statSync(abs).isFile()) continue;
+      const content = fs.readFileSync(abs, "utf8");
+      const truncated = content.length > 8192 ? `${content.slice(0, 8192)}\n… [文件过长已截断]` : content;
+      if (total + truncated.length > 32_768) break;
+      total += truncated.length;
+      blocks.push(`<file path="${rel}">\n${truncated}\n</file>`);
+    } catch {
+      /* 不存在/不可读 → 保留原文 */
+    }
+  }
+  return blocks.length ? `${text}\n\n引用文件内容：\n${blocks.join("\n\n")}` : text;
+}
+
 export class SessionManager {
   /** 活跃轮次的中断控制器 */
   private abortControllers = new Map<string, AbortController>();
@@ -43,6 +69,8 @@ export class SessionManager {
   private permissions = new Map<string, PermissionService>();
   /** M1：会话级任务清单（内存缓存；重启后从事件日志的 todo.list_updated 重建） */
   private todos: TodoStore;
+  /** F4（v0.4）：busy 时的消息队列（内存；FIFO，turn 结束自动出队） */
+  private queues = new Map<string, { id: string; text: string; attachments: { name: string; path: string }[] }[]>();
 
   constructor(
     private store: EventStore,
@@ -168,8 +196,8 @@ export class SessionManager {
     return { ok: true };
   }
 
-  postMessage(sessionId: string, text: string): void {
-    this.startTurn(sessionId, text, []);
+  postMessage(sessionId: string, text: string): { queued: boolean } {
+    return this.startTurn(sessionId, text, []);
   }
 
   /** 上传附件：保存到工作区 .agent/attachments/<sessionId>/，返回路径 */
@@ -189,26 +217,40 @@ export class SessionManager {
     sessionId: string,
     text: string,
     attachments: { name: string; path: string }[],
-  ): void {
-    this.startTurn(sessionId, text, attachments);
+  ): { queued: boolean } {
+    return this.startTurn(sessionId, text, attachments);
   }
 
   private startTurn(
     sessionId: string,
     text: string,
     attachments: { name: string; path: string }[],
-  ): void {
+  ): { queued: boolean } {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    // F4（v0.4）：busy 时排队（Steering）——落审计事件，turn 结束自动出队
     if (session.status === "running" || session.status === "awaiting_approval") {
-      throw new Error("会话正忙，请先中断或等待当前轮次结束");
+      const queueId = randomUUID();
+      const q = this.queues.get(sessionId) ?? [];
+      q.push({ id: queueId, text, attachments });
+      this.queues.set(sessionId, q);
+      this.store.append({
+        session_id: sessionId,
+        type: "message.queued",
+        actor: "user",
+        payload: { queue_id: queueId, text },
+      });
+      return { queued: true };
     }
     const adapter = this.models.get(session.model);
     if (!adapter) throw new Error(`模型不可用: ${session.model}`);
 
     // P0-4a：斜杠命令展开（~/.agent/commands、<cwd>/.agent/commands；未命中按原文）
     const cmdHit = tryExpandCommandInput(text, session.cwd);
-    const expandedText = cmdHit ? cmdHit.expanded : text;
+    let expandedText = cmdHit ? cmdHit.expanded : text;
+
+    // F3（v0.4）：@文件引用展开——存在的相对/绝对路径注入为 <file> 上下文块
+    expandedText = expandFileRefs(expandedText, session.cwd);
 
     // 附件落事件（在轮次开始前，保证 message.user 事件带附件信息）
     const effectiveText = attachments.length
@@ -238,7 +280,39 @@ export class SessionManager {
       this.abortControllers.delete(sessionId);
       // P8-4：首轮完成后自动生成会话标题（失败静默，不影响主流程）
       void this.maybeAutoTitle(sessionId, projectCfg.auto_title);
+      // F4：出队——当前轮次结束（完成/中断/失败）后自动执行下一条排队消息
+      const q = this.queues.get(sessionId);
+      if (q?.length) {
+        const next = q.shift()!;
+        if (q.length === 0) this.queues.delete(sessionId);
+        // 微任务延迟，让 turn.aborted/completed 状态先落定
+        queueMicrotask(() => {
+          try {
+            this.startTurn(sessionId, next.text, next.attachments);
+          } catch (err) {
+            console.error("[queue] 出队执行失败:", err);
+          }
+        });
+      }
     });
+    return { queued: false };
+  }
+
+  /** F4：撤回排队消息 */
+  cancelQueued(sessionId: string, queueId: string): boolean {
+    const q = this.queues.get(sessionId);
+    if (!q) return false;
+    const idx = q.findIndex((m) => m.id === queueId);
+    if (idx < 0) return false;
+    q.splice(idx, 1);
+    if (q.length === 0) this.queues.delete(sessionId);
+    this.store.append({
+      session_id: sessionId,
+      type: "message.queue_cancelled",
+      actor: "user",
+      payload: { queue_id: queueId },
+    });
+    return true;
   }
 
   /**
@@ -379,6 +453,115 @@ export class SessionManager {
       actor: "user",
       payload: {},
     });
+  }
+
+  /**
+   * F1（v0.4）：rewind。code = 恢复快照（write/edit 的影子拷贝；bash 变更走 git rollback）；
+   * conversation = 追加 session.rewound 事件，上下文重建与轨迹在该 seq 截断。
+   */
+  rewind(sessionId: string, toSeq: number, mode: "code" | "conversation" | "both"): { files_restored: number } {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    if (session.status === "running" || session.status === "awaiting_approval") {
+      throw new Error("会话正忙，请先中断再回滚");
+    }
+    let filesRestored = 0;
+    if (mode === "code" || mode === "both") {
+      filesRestored = restoreAfter(session.cwd, sessionId, toSeq).length;
+    }
+    if (mode === "conversation" || mode === "both") {
+      this.store.append({
+        session_id: sessionId,
+        type: "session.rewound",
+        actor: "user",
+        payload: { to_seq: toSeq, mode, files_restored: filesRestored },
+      });
+    } else if (filesRestored > 0) {
+      // 纯代码回滚也留审计（mode=code 不截断轨迹，仅作标记事件）
+      this.store.append({
+        session_id: sessionId,
+        type: "session.rewound",
+        actor: "user",
+        payload: { to_seq: toSeq, mode, files_restored: filesRestored },
+      });
+    }
+    return { files_restored: filesRestored };
+  }
+
+  /** F2（v0.4）：变更面板——会话快照文件 × 当前文件的 unified diff 聚合 */
+  listChanges(sessionId: string): { path: string; diff: string; additions: number; deletions: number }[] {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    return collectChanges(session.cwd, sessionId).map((ch) => {
+      const d: DiffResult = unifiedDiff(ch.path, ch.before, ch.after);
+      return { path: ch.path, diff: d.text, additions: d.additions, deletions: d.deletions };
+    });
+  }
+
+  /** F2：审查操作（accept 丢弃快照 / revert 恢复内容），落 changes.reviewed 审计事件 */
+  reviewChange(sessionId: string, relPath: string, action: "accept" | "revert"): { ok: boolean; error?: string } {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    if (session.status === "running" || session.status === "awaiting_approval") {
+      return { ok: false, error: "会话正忙，请先等待或中断" };
+    }
+    const r = reviewChange(session.cwd, sessionId, relPath, action);
+    if (r.ok) {
+      this.store.append({
+        session_id: sessionId,
+        type: "changes.reviewed",
+        actor: "user",
+        payload: { path: relPath, action },
+      });
+    }
+    return r;
+  }
+
+  /** F5（v0.4）：批准计划——切 build 模式并立即开工（可附修订后的计划文本） */
+  approvePlan(sessionId: string, revisedText?: string): void {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    if (session.status === "running" || session.status === "awaiting_approval") {
+      throw new Error("会话正忙");
+    }
+    this.updateConfig(sessionId, { mode: "build" });
+    this.postMessage(
+      sessionId,
+      revisedText
+        ? `计划（已修订）已批准，请严格按以下计划执行：\n\n${revisedText}`
+        : "计划已批准，请按计划开始执行。",
+    );
+  }
+
+  /** F3（v0.4）：@ 补全数据源——cwd 下文件模糊搜索（忽略重型目录，前 20 条） */
+  listFiles(sessionId: string, query: string): string[] {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    const IGNORE = new Set(["node_modules", ".git", ".agent", "dist", "build", ".cache", "coverage"]);
+    const q = query.toLowerCase();
+    const hits: string[] = [];
+    const walk = (dir: string, depth: number): void => {
+      if (hits.length >= 20 || depth > 6) return;
+      let ents: fs.Dirent[];
+      try {
+        ents = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const ent of ents) {
+        if (hits.length >= 20) return;
+        if (ent.name.startsWith(".") && ent.name !== ".") continue;
+        const full = path.join(dir, ent.name);
+        const rel = path.relative(session.cwd, full);
+        if (ent.isDirectory()) {
+          if (!IGNORE.has(ent.name)) walk(full, depth + 1);
+        } else if (!q || rel.toLowerCase().includes(q)) {
+          hits.push(rel);
+        }
+      }
+    };
+    walk(session.cwd, 0);
+    return hits;
   }
 
   /**

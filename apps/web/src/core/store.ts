@@ -51,11 +51,27 @@ interface SessionStoreState {
   /** M2：切换会话代理 */
   setAgent: (slot: PaneSlot, agent: string) => Promise<void>;
   rollback: (slot: PaneSlot, commit: string) => Promise<void>;
+  /** F1（v0.4）：rewind 到指定 seq（code/conversation/both） */
+  rewind: (slot: PaneSlot, toSeq: number, mode: "code" | "conversation" | "both") => Promise<void>;
+  /** F4：撤回排队消息 */
+  cancelQueued: (slot: PaneSlot, queueId: string) => Promise<void>;
+  /** F5：批准计划（可附修订文本） */
+  approvePlan: (slot: PaneSlot, revisedText?: string) => Promise<void>;
+  /** F9：从指定 seq 分叉出新会话（返回新会话记录） */
+  forkSession: (slot: PaneSlot, atSeq: number) => Promise<SessionRecord | null>;
+  /** F6：消息编辑重发——请求把某条用户消息载入 Composer（seq 用于提交前先截断） */
+  editRequest: { slot: PaneSlot; seq: number; text: string } | null;
+  requestEdit: (slot: PaneSlot, seq: number, text: string) => void;
+  clearEditRequest: () => void;
+  /** F6：每会话输入历史（↑ 召回；模块级，不落盘） */
+  inputHistory: (slot: PaneSlot) => string[];
 }
 
 let primarySource: SessionEventSource | null = null;
 let secondarySource: SessionEventSource | null = null;
 let aggregateSource: AggregateEventSource | null = null;
+/** F6：输入历史（sessionId → 最近 50 条发送记录） */
+const inputHistories = new Map<string, string[]>();
 
 export const useSessionStore = create<SessionStoreState>((set, get) => {
   /** 按槽位取会话记录 */
@@ -97,6 +113,14 @@ export const useSessionStore = create<SessionStoreState>((set, get) => {
     splitTrajectory: initialTrajectory,
     approvalAlerts: {},
     liveStatus: {},
+    editRequest: null,
+
+    requestEdit(slot, seq, text) {
+      set({ editRequest: { slot, seq, text } });
+    },
+    clearEditRequest() {
+      set({ editRequest: null });
+    },
 
     selectSession(session) {
       primarySource?.stop();
@@ -168,6 +192,17 @@ export const useSessionStore = create<SessionStoreState>((set, get) => {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `发送失败 ${res.status}`);
       }
+      // F6：记入输入历史（去重，最多 50 条）
+      const hist = inputHistories.get(s.session_id) ?? [];
+      inputHistories.set(
+        s.session_id,
+        [text, ...hist.filter((h) => h !== text)].slice(0, 50),
+      );
+    },
+
+    inputHistory(slot) {
+      const s = recordOf(slot);
+      return s ? (inputHistories.get(s.session_id) ?? []) : [];
     },
 
     async abort(slot) {
@@ -240,6 +275,56 @@ export const useSessionStore = create<SessionStoreState>((set, get) => {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? `回滚失败 ${res.status}`);
       }
+    },
+
+    async rewind(slot, toSeq, mode) {
+      const s = recordOf(slot);
+      if (!s) return;
+      const res = await fetch(`/api/sessions/${s.session_id}/rewind`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ to_seq: toSeq, mode }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `回滚失败 ${res.status}`);
+      }
+    },
+
+    async cancelQueued(slot, queueId) {
+      const s = recordOf(slot);
+      if (!s) return;
+      await fetch(`/api/sessions/${s.session_id}/queue/${queueId}/cancel`, { method: "POST" });
+    },
+
+    async approvePlan(slot, revisedText) {
+      const s = recordOf(slot);
+      if (!s) return;
+      const res = await fetch(`/api/sessions/${s.session_id}/plan/approve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: revisedText }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `批准失败 ${res.status}`);
+      }
+      patchRecord(slot, { mode: "build" });
+    },
+
+    async forkSession(slot, atSeq) {
+      const s = recordOf(slot);
+      if (!s) return null;
+      const res = await fetch(`/api/sessions/${s.session_id}/fork`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ at_seq: atSeq }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `分叉失败 ${res.status}`);
+      }
+      return (await res.json()) as SessionRecord;
     },
   };
 });

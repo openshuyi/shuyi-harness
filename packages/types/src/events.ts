@@ -191,6 +191,32 @@ export const HookExecutedPayload = z.object({
   stderr_excerpt: z.string().optional(),
 });
 
+// ---------- v0.4 交互体验（F1/F2/F4/F9） ----------
+/** F1：turn 锚点（检查点）。快照本体在 <cwd>/.agent/checkpoints/<sid>/<seq>/ 文件系统 */
+export const CheckpointCreatedPayload = z.object({
+  /** turn.started 的 seq（rewind 目标锚点） */
+  turn_seq: z.number().int(),
+  snapshot_dir: z.string(),
+});
+/** F1：rewind 标记。conversation/both 时轨迹投影与上下文重建在 to_seq 处截断 */
+export const SessionRewoundPayload = z.object({
+  to_seq: z.number().int(),
+  mode: z.enum(["code", "conversation", "both"]),
+  /** code/both 时恢复的文件数 */
+  files_restored: z.number().int().optional(),
+});
+/** F2：变更审查审计（accept 清理快照；revert 恢复快照内容） */
+export const ChangesReviewedPayload = z.object({
+  path: z.string(),
+  action: z.enum(["accept", "revert"]),
+});
+/** F4：busy 时消息入队（内存队列；本事件仅审计） */
+export const MessageQueuedPayload = z.object({
+  queue_id: z.string(),
+  text: z.string(),
+});
+export const MessageQueueCancelledPayload = z.object({ queue_id: z.string() });
+
 // ---------- 事件类型注册表 ----------
 export const EventPayloads = {
   "session.created": SessionCreatedPayload,
@@ -222,6 +248,11 @@ export const EventPayloads = {
   "session.titled": SessionTitledPayload,
   "error.occurred": ErrorOccurredPayload,
   "hook.executed": HookExecutedPayload,
+  "checkpoint.created": CheckpointCreatedPayload,
+  "session.rewound": SessionRewoundPayload,
+  "changes.reviewed": ChangesReviewedPayload,
+  "message.queued": MessageQueuedPayload,
+  "message.queue_cancelled": MessageQueueCancelledPayload,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;

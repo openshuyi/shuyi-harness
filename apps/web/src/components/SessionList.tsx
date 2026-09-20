@@ -95,6 +95,19 @@ export function SessionList() {
   const [theme, setTheme] = useState<string>(
     () => document.documentElement.dataset.theme ?? "dark",
   );
+  /** F8（v0.4）：置顶会话（localStorage 持久） */
+  const [pins, setPins] = useState<string[]>(
+    () => JSON.parse(localStorage.getItem("shuyi-pins") ?? "[]") as string[],
+  );
+  const togglePin = (sessionId: string) => {
+    setPins((prev) => {
+      const next = prev.includes(sessionId)
+        ? prev.filter((id) => id !== sessionId)
+        : [sessionId, ...prev];
+      localStorage.setItem("shuyi-pins", JSON.stringify(next));
+      return next;
+    });
+  };
   const toggleTheme = () => {
     const next = theme === "dark" ? "light" : "dark";
     document.documentElement.dataset.theme = next;
@@ -181,7 +194,9 @@ export function SessionList() {
           </>
         ) : (
           <>
-            {sessions.map((s) => {
+            {(() => {
+              // F8：分组渲染——置顶 / 进行中 / 空闲
+              const renderItem = (s: SessionRecord) => {
               // M5：聚合流驱动的实时状态叠加（非可见会话），查询结果兜底
               const status = liveStatus[s.session_id] ?? s.status;
               const alerted = s.session_id in approvalAlerts;
@@ -195,6 +210,17 @@ export function SessionList() {
                   <div>
                     <span className={`status-dot ${status}`} />
                     {s.title}
+                    {/* F8：置顶按钮 */}
+                    <button
+                      className={`pin-btn ${pins.includes(s.session_id) ? "on" : ""}`}
+                      title={pins.includes(s.session_id) ? "取消置顶" : "置顶"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePin(s.session_id);
+                      }}
+                    >
+                      📌
+                    </button>
                     {/* M5：分栏按钮（当前主栏会话不显示） */}
                     {current?.session_id !== s.session_id && (
                       <button
@@ -257,7 +283,34 @@ export function SessionList() {
                   )}
                 </div>
               );
-            })}
+              };
+              const byId = (list: SessionRecord[]) => list;
+              const pinned = byId(sessions.filter((s) => pins.includes(s.session_id)));
+              const running = sessions.filter(
+                (s) =>
+                  !pins.includes(s.session_id) &&
+                  ((liveStatus[s.session_id] ?? s.status) === "running" ||
+                    (liveStatus[s.session_id] ?? s.status) === "awaiting_approval"),
+              );
+              const idleList = sessions.filter(
+                (s) =>
+                  !pins.includes(s.session_id) &&
+                  (liveStatus[s.session_id] ?? s.status) !== "running" &&
+                  (liveStatus[s.session_id] ?? s.status) !== "awaiting_approval",
+              );
+              const groups = [
+                { label: "📌 置顶", items: pinned },
+                { label: "● 进行中", items: running },
+                { label: "○ 空闲", items: idleList },
+              ].filter((g) => g.items.length > 0);
+              const showHeaders = pinned.length > 0 || running.length > 0;
+              return groups.map((g) => (
+                <div key={g.label}>
+                  {showHeaders && <div className="session-group-label">{g.label}</div>}
+                  {g.items.map(renderItem)}
+                </div>
+              ));
+            })()}
             {sessions.length === 0 && (
               <div style={{ padding: 12, fontSize: 12, color: "var(--text-dim)" }}>
                 暂无会话，点击上方按钮创建

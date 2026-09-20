@@ -125,7 +125,7 @@ export class TuiApp {
       await this.createSession();
     }
     this.line(`${C.bold}${C.cyan} shuyi tui${C.reset} ${C.dim}— ${this.deps.baseUrl} · ${this.deps.cwd}${C.reset}`);
-    this.line(`${C.dim}输入消息与 agent 对话；/mode 切换模式，/sessions 会话列表，/abort 中断，/quit 退出${C.reset}`);
+    this.line(`${C.dim}输入消息与 agent 对话；/mode 切换模式，/sessions 会话列表，/rewind [n] 回滚，/abort 中断，/quit 退出${C.reset}`);
     this.prompt();
     this.deps.io.onLine((line) => {
       this.onInput(line.trimEnd()).catch((err) => {
@@ -347,6 +347,32 @@ export class TuiApp {
         void this.subscribeEvents();
         this.prompt();
         break;
+      // F1（v0.4）：/rewind [n] [code|conversation]——回到倒数第 n 个 turn 锚点（默认 both）
+      case "/rewind": {
+        if (!this.session) return;
+        const n = Math.max(1, Number(rest[0] ?? 1) || 1);
+        const mode = rest.includes("code") ? "code" : rest.includes("conversation") ? "conversation" : "both";
+        try {
+          const turns = await this.api<{ turn_seqs: number[] }>(
+            `/api/sessions/${this.session.session_id}/turns`,
+          );
+          const target = turns.turn_seqs[turns.turn_seqs.length - n];
+          if (target === undefined) {
+            this.line(`${C.red}没有第 ${n} 个可回滚的轮次${C.reset}`);
+          } else {
+            await this.api(`/api/sessions/${this.session.session_id}/rewind`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ to_seq: target, mode }),
+            });
+            this.line(`${C.dim}已回滚到倒数第 ${n} 轮（${mode}）${C.reset}`);
+          }
+        } catch (err) {
+          this.line(`${C.red}[回滚失败] ${err instanceof Error ? err.message : String(err)}${C.reset}`);
+        }
+        this.prompt();
+        break;
+      }
       default:
         this.line(`${C.dim}未知命令 ${cmd}（/mode /sessions /use /new /abort /quit）${C.reset}`);
         this.prompt();

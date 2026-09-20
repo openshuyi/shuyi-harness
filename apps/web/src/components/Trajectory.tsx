@@ -1,9 +1,12 @@
 /**
  * Trajectory 视图：按事件流渲染时间线（消息 / 工具卡片 / 标记）。
+ * v0.4：助手消息 Markdown 渲染；用户消息悬浮操作（回滚三模式 / 分叉 / 编辑重发）；
+ *      plan 模式闲置时展示计划批准卡片。
  */
 import { useEffect, useRef, useState } from "react";
 import type { TimelineItem } from "../core/reducer.js";
 import { useSessionStore, type PaneSlot } from "../core/store.js";
+import { Markdown } from "./Markdown.js";
 
 const STATUS_LABEL: Record<string, string> = {
   proposed: "已提议",
@@ -30,7 +33,7 @@ function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
         <div className="tool-card-body">
           <pre>{JSON.stringify(item.args, null, 2)}</pre>
           {item.output && <pre style={{ marginTop: 8 }}>{item.output}</pre>}
-          {item.result && <pre style={{ marginTop: 8 }}>{item.result}</pre>}
+          {item.result && <Markdown text={item.result} className="tool-result-md" />}
           {item.error && <pre style={{ marginTop: 8, color: "var(--red)" }}>{item.error}</pre>}
           {item.diff && (
             <pre style={{ marginTop: 8 }}>
@@ -75,6 +78,135 @@ function itemSource(item: TimelineItem): SourceFilter {
   }
 }
 
+/** F1/F9：用户消息悬浮操作条 */
+function UserActions({
+  slot,
+  seq,
+  text,
+  idle,
+}: {
+  slot: PaneSlot;
+  seq: number;
+  text: string;
+  idle: boolean;
+}) {
+  const { rewind, forkSession, requestEdit } = useSessionStore();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const doRewind = async (mode: "code" | "conversation" | "both") => {
+    setBusy(true);
+    setOpen(false);
+    try {
+      await rewind(slot, seq, mode);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="msg-actions" ref={ref}>
+      <button
+        className="msg-action"
+        disabled={!idle || busy}
+        title="回滚到这条消息（之后的内容按所选范围撤销）"
+        onClick={() => setOpen((v) => !v)}
+      >
+        ↩
+      </button>
+      <button
+        className="msg-action"
+        disabled={!idle || busy}
+        title="编辑这条消息并重发（之后的内容从会话中移除）"
+        onClick={() => requestEdit(slot, seq, text)}
+      >
+        ✎
+      </button>
+      <button
+        className="msg-action"
+        disabled={busy}
+        title="从此处分叉新会话（复制到此处为止的历史）"
+        onClick={() => {
+          void forkSession(slot, seq)
+            .then((s) => {
+              if (s) useSessionStore.getState().selectSession(s);
+            })
+            .catch((err) => alert(err instanceof Error ? err.message : String(err)));
+        }}
+      >
+        ⑂
+      </button>
+      {open && (
+        <div className="rewind-pop">
+          <button onClick={() => void doRewind("both")}>
+            <b>会话 + 代码</b>
+            <span>轨迹截断到此处，并恢复此消息之后的文件改动</span>
+          </button>
+          <button onClick={() => void doRewind("conversation")}>
+            <b>仅会话</b>
+            <span>轨迹截断到此处，文件保持现状</span>
+          </button>
+          <button onClick={() => void doRewind("code")}>
+            <b>仅代码</b>
+            <span>恢复此消息之后的文件改动，会话历史保留</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** F5：计划批准卡片（plan 模式 + 闲置 + 最后一条为完成的助手消息） */
+function PlanCard({ slot, planText }: { slot: PaneSlot; planText: string }) {
+  const { approvePlan } = useSessionStore();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(planText);
+  const [busy, setBusy] = useState(false);
+  const approve = async () => {
+    setBusy(true);
+    try {
+      await approvePlan(slot, editing && draft !== planText ? draft : undefined);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="plan-card">
+      <div className="plan-card-title">📋 计划待批准</div>
+      {editing ? (
+        <textarea
+          className="plan-editor"
+          rows={Math.min(18, draft.split("\n").length + 2)}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+        />
+      ) : null}
+      <div className="plan-card-actions">
+        <button className="plan-approve" disabled={busy} onClick={() => void approve()}>
+          {busy ? "启动中…" : editing ? "批准（含修订）并执行" : "批准并执行"}
+        </button>
+        <button className="plan-edit" disabled={busy} onClick={() => setEditing((v) => !v)}>
+          {editing ? "收起编辑" : "编辑计划"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
   const trajectory = useSessionStore((s) => (slot === "secondary" ? s.splitTrajectory : s.trajectory));
   const current = useSessionStore((s) => (slot === "secondary" ? s.split : s.current));
@@ -95,10 +227,11 @@ export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
           <div>选择左侧会话，或点击「+ 新会话」开始</div>
           <div className="empty-hints">
             <span className="empty-hint"><code>/</code> 斜杠命令</span>
-            <span className="empty-hint">📎 附件</span>
+            <span className="empty-hint"><code>@</code> 引用文件</span>
+            <span className="empty-hint"><code>Ctrl+K</code> 命令面板</span>
             <span className="empty-hint">⇄ 双栏并行</span>
             <span className="empty-hint">⎇ worktree 隔离</span>
-            <span className="empty-hint"><code>!write !bash</code> Mock 体验</span>
+            <span className="empty-hint">↩ 检查点回滚</span>
           </div>
         </div>
       </div>
@@ -106,6 +239,18 @@ export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
   }
 
   const visible = trajectory.items.filter((i) => !hidden.has(itemSource(i)));
+  const idle = trajectory.status === "idle";
+  const lastAssistant = [...trajectory.items].reverse().find(
+    (i): i is Extract<TimelineItem, { kind: "assistant" }> => i.kind === "assistant" && !i.streaming && i.text.trim().length > 0,
+  );
+  // F5：计划卡片条件——plan 模式、闲置、最近一条可见内容是助手消息
+  const showPlanCard =
+    current.mode === "plan" &&
+    idle &&
+    lastAssistant !== undefined &&
+    visible.length > 0 &&
+    visible[visible.length - 1] === lastAssistant;
+
   const toggle = (f: SourceFilter) =>
     setHidden((prev) => {
       const next = new Set(prev);
@@ -126,7 +271,7 @@ export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
             {f.label}
           </button>
         ))}
-        {trajectory.baselines.length > 0 && trajectory.status === "idle" && (
+        {trajectory.baselines.length > 0 && idle && (
           <button
             className="filter-chip"
             disabled={rollingBack}
@@ -157,7 +302,10 @@ export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
           case "user":
             return (
               <div className="msg" key={item.key}>
-                <div className="msg-user">{item.text}</div>
+                <div className="msg-user">
+                  {item.text}
+                  <UserActions slot={slot} seq={item.seq} text={item.text} idle={idle} />
+                </div>
               </div>
             );
           case "assistant":
@@ -166,7 +314,9 @@ export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
                 <div className="msg-label">
                   助手{item.streaming ? <span className="shimmer"> · 输出中…</span> : ""}
                 </div>
-                <div className="msg-assistant">{item.text}</div>
+                <div className="msg-assistant">
+                  <Markdown text={item.text} />
+                </div>
               </div>
             );
           case "tool":
@@ -179,6 +329,7 @@ export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
             );
         }
       })}
+      {showPlanCard && <PlanCard slot={slot} planText={lastAssistant.text} />}
       <div ref={bottomRef} />
     </div>
   );

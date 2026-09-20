@@ -6,11 +6,12 @@
 import type { AgentEvent, SessionStatus, TodoItem } from "@shuyi/types";
 
 export type TimelineItem =
-  | { kind: "user"; key: string; text: string }
-  | { kind: "assistant"; key: string; text: string; streaming: boolean }
+  | { kind: "user"; key: string; seq: number; text: string }
+  | { kind: "assistant"; key: string; seq: number; text: string; streaming: boolean }
   | {
       kind: "tool";
       key: string;
+      seq: number;
       callId: string;
       tool: string;
       args: Record<string, unknown>;
@@ -21,7 +22,13 @@ export type TimelineItem =
       durationMs?: number;
       diff?: string;
     }
-  | { kind: "marker"; key: string; text: string; tone: "info" | "warn" | "error" };
+  | { kind: "marker"; key: string; seq: number; text: string; tone: "info" | "warn" | "error" };
+
+/** F4：排队中的消息（message.queued 事件驱动） */
+export interface QueuedMessage {
+  queueId: string;
+  text: string;
+}
 
 export interface PendingApproval {
   approvalId: string;
@@ -47,6 +54,10 @@ export interface TrajectoryState {
   baselines: TurnBaseline[];
   /** M1：会话任务清单（todo.list_updated 事件的最新快照） */
   todos: TodoItem[];
+  /** F4：排队中的消息 */
+  queued: QueuedMessage[];
+  /** F1：最近一次会话级 rewind 的水位线（轨迹截断展示；无则 -1） */
+  rewoundTo: number;
 }
 
 export const initialTrajectory: TrajectoryState = {
@@ -57,6 +68,8 @@ export const initialTrajectory: TrajectoryState = {
   usage: { prompt: 0, completion: 0 },
   baselines: [],
   todos: [],
+  queued: [],
+  rewoundTo: -1,
 };
 
 export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectoryState {
@@ -75,7 +88,59 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
     }
 
     case "message.user":
-      return { ...s, items: [...s.items, { kind: "user", key: e.event_id, text: p.text as string }] };
+      return {
+        ...s,
+        // F4：出队执行的消息到达时，从排队列表移除（按文本匹配第一条）
+        queued: (() => {
+          const idx = s.queued.findIndex((q) => q.text === (p.text as string));
+          if (idx < 0) return s.queued;
+          return [...s.queued.slice(0, idx), ...s.queued.slice(idx + 1)];
+        })(),
+        items: [...s.items, { kind: "user", key: e.event_id, seq: e.seq, text: p.text as string }],
+      };
+
+    // F1：会话级 rewind——conversation/both 时截断水位线之后的轨迹与基线
+    case "session.rewound": {
+      const toSeq = p.to_seq as number;
+      const mode = p.mode as string;
+      const truncate = mode === "conversation" || mode === "both";
+      const items = truncate
+        ? [
+            ...s.items.filter((i) => i.seq <= toSeq),
+            {
+              kind: "marker" as const,
+              key: e.event_id,
+              seq: e.seq,
+              text: mode === "both" ? "已回滚会话与代码到此处" : "会话已回滚到此处（代码未动）",
+              tone: "warn" as const,
+            },
+          ]
+        : [
+            ...s.items,
+            {
+              kind: "marker" as const,
+              key: e.event_id,
+              seq: e.seq,
+              text: `代码已回滚（恢复 ${(p.files_restored as number) ?? 0} 个文件）`,
+              tone: "warn" as const,
+            },
+          ];
+      return {
+        ...s,
+        items,
+        rewoundTo: truncate ? toSeq : s.rewoundTo,
+        baselines: truncate ? s.baselines.filter((b) => b.seq <= toSeq) : s.baselines,
+      };
+    }
+
+    // F4：消息排队 / 撤队
+    case "message.queued":
+      return {
+        ...s,
+        queued: [...s.queued, { queueId: p.queue_id as string, text: p.text as string }],
+      };
+    case "message.queue_cancelled":
+      return { ...s, queued: s.queued.filter((q) => q.queueId !== (p.queue_id as string)) };
 
     case "message.assistant.delta": {
       const items = [...s.items];
@@ -83,7 +148,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
       if (last?.kind === "assistant" && last.streaming) {
         items[items.length - 1] = { ...last, text: last.text + (p.text_delta as string) };
       } else {
-        items.push({ kind: "assistant", key: e.event_id, text: p.text_delta as string, streaming: true });
+        items.push({ kind: "assistant", key: e.event_id, seq: e.seq, text: p.text_delta as string, streaming: true });
       }
       return { ...s, items };
     }
@@ -94,7 +159,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
       if (last?.kind === "assistant" && last.streaming) {
         items[items.length - 1] = { ...last, text: (p.text as string) || last.text, streaming: false };
       } else if ((p.text as string)?.length) {
-        items.push({ kind: "assistant", key: e.event_id, text: p.text as string, streaming: false });
+        items.push({ kind: "assistant", key: e.event_id, seq: e.seq, text: p.text as string, streaming: false });
       }
       return { ...s, items };
     }
@@ -106,7 +171,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
           ...s.items,
           {
             kind: "tool",
-            key: e.event_id,
+            key: e.event_id, seq: e.seq,
             callId: p.call_id as string,
             tool: p.tool as string,
             args: p.args as Record<string, unknown>,
@@ -187,7 +252,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
           ...s.items,
           {
             kind: "marker",
-            key: e.event_id,
+            key: e.event_id, seq: e.seq,
             text: `上下文已压缩（${p.tokens_before} → ${p.tokens_after} tokens）`,
             tone: "info",
           },
@@ -196,7 +261,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
 
     case "session.config_changed": {
       const changes = Object.entries(p).map(([k, v]) => `${k} → ${v}`).join(", ");
-      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `配置变更：${changes}`, tone: "info" }] };
+      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, seq: e.seq, text: `配置变更：${changes}`, tone: "info" }] };
     }
 
     case "turn.completed":
@@ -209,26 +274,26 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
       };
 
     case "turn.aborted":
-      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `轮次已中断：${p.reason}`, tone: "warn" }] };
+      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, seq: e.seq, text: `轮次已中断：${p.reason}`, tone: "warn" }] };
 
     case "turn.rollback":
       return {
         ...s,
         items: [
           ...s.items,
-          { kind: "marker", key: e.event_id, text: `工作区已回滚到提交 ${String(p.commit).slice(0, 8)}`, tone: "warn" },
+          { kind: "marker", key: e.event_id, seq: e.seq, text: `工作区已回滚到提交 ${String(p.commit).slice(0, 8)}`, tone: "warn" },
         ],
       };
 
     case "error.occurred":
-      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `错误：${p.message}`, tone: "error" }] };
+      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, seq: e.seq, text: `错误：${p.message}`, tone: "error" }] };
 
     case "subagent.started":
       return {
         ...s,
         items: [
           ...s.items,
-          { kind: "marker", key: e.event_id, text: `子代理开始：${(p.task as string).slice(0, 80)}`, tone: "info" },
+          { kind: "marker", key: e.event_id, seq: e.seq, text: `子代理开始：${(p.task as string).slice(0, 80)}`, tone: "info" },
         ],
       };
 
@@ -237,7 +302,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
         ...s,
         items: [
           ...s.items,
-          { kind: "marker", key: e.event_id, text: `子代理完成（${p.duration_ms}ms）：${(p.summary_excerpt as string).slice(0, 120)}`, tone: "info" },
+          { kind: "marker", key: e.event_id, seq: e.seq, text: `子代理完成（${p.duration_ms}ms）：${(p.summary_excerpt as string).slice(0, 120)}`, tone: "info" },
         ],
       };
 
@@ -246,7 +311,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
         ...s,
         items: [
           ...s.items,
-          { kind: "marker", key: e.event_id, text: `已写入记忆：${p.excerpt}`, tone: "info" },
+          { kind: "marker", key: e.event_id, seq: e.seq, text: `已写入记忆：${p.excerpt}`, tone: "info" },
         ],
       };
 
@@ -257,7 +322,7 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
       return { ...s, todos: (p.todos as TodoItem[]) ?? [] };
 
     case "session.titled":
-      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `会话已命名为：${p.title}`, tone: "info" }] };
+      return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, seq: e.seq, text: `会话已命名为：${p.title}`, tone: "info" }] };
 
     default:
       return s;

@@ -28,6 +28,8 @@ import type { ModelAdapter as ModelAdapterT } from "../model/types.js";
 import { loadProjectConfig, loadAgentsMd } from "../config/project.js";
 import { skillsPromptSection } from "../skills/index.js";
 import { runBeforeHooks, runObserveHooks, hooksPresent, type HookRunResult } from "../hooks/index.js";
+import { snapshotFile } from "../checkpoint/index.js";
+import path from "node:path";
 
 export interface LoopDeps {
   store: EventStore;
@@ -93,13 +95,24 @@ export async function runTurn(
   const turnId = randomUUID();
   const repoReady = ensureRepo(session.cwd); // git 撤销机制（不可用时静默降级）
 
-  store.append({
+  const turnStarted = store.append({
     session_id: sid,
     type: "turn.started",
     actor: "system",
     turn_id: turnId,
     // 记录轮次开始时的 git HEAD：回滚到此轮 = reset 到 base_commit
     payload: { base_commit: repoReady ? (headCommit(session.cwd) ?? undefined) : undefined },
+  });
+  // F1：检查点锚点（快照目录为 <cwd>/.agent/checkpoints/<sid>/，seq 为恢复水位线）
+  store.append({
+    session_id: sid,
+    type: "checkpoint.created",
+    actor: "system",
+    turn_id: turnId,
+    payload: {
+      turn_seq: turnStarted.seq,
+      snapshot_dir: path.join(session.cwd, ".agent", "checkpoints", sid),
+    },
   });
   store.append({
     session_id: sid,
@@ -557,6 +570,13 @@ export async function runTurn(
             ),
         };
         try {
+          // F1：变更类工具执行前快照（write/edit/memory_write 带 path；bash 由 git 回滚覆盖）
+          if (call.name === "write" || call.name === "edit" || call.name === "memory_write") {
+            const p = (args as { path?: unknown }).path;
+            if (typeof p === "string" && p) {
+              snapshotFile(session.cwd, sid, store.getSession(sid)?.last_seq ?? turnStarted.seq, path.resolve(session.cwd, p));
+            }
+          }
           const out = await tool.execute(args, toolCtx);
           // git 原子提交（撤销机制）：写入类工具成功后提交
           let commit: string | undefined;
