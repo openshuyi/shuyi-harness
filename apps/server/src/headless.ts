@@ -109,7 +109,18 @@ export async function runHeadless(argv: string[]): Promise<number> {
         console.log(`[失败] ${String(p.error).slice(0, 200)}`);
         break;
       case "approval.requested":
-        console.log(`[审批] ${p.tool} 需要批准但未开启 --auto-approve，已拒绝`);
+        // P0：question 工具——headless 无交互，自动作答（首个选项或默认语）保证轮次不挂起
+        if (p.tool === "question") {
+          const opts = (p.args as { options?: string[] })?.options;
+          const answer = opts?.[0] ?? "（headless 无交互，按你的最佳判断继续）";
+          console.log(`\n[提问] ${(p.args as { question?: string })?.question} → 自动回答：${answer}`);
+          sessions.resolveApproval(e.session_id, p.approval_id as string, {
+            decision: "approve",
+            answer,
+          });
+        } else {
+          console.log(`[审批] ${p.tool} 需要批准但未开启 --auto-approve，已拒绝`);
+        }
         break;
       case "turn.completed": {
         const usage = p.usage as { prompt_tokens: number; completion_tokens: number };

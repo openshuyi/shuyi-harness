@@ -9,6 +9,8 @@ import { z } from "zod";
 import fs from "node:fs";
 import path from "node:path";
 import { bashTool, bashStatusTool, bashKillTool } from "./bash.js";
+import { todowriteTool, todoreadTool } from "./todo.js";
+import type { TodoItem } from "@shuyi/types";
 
 export interface ToolContext {
   sessionId: string;
@@ -19,6 +21,15 @@ export interface ToolContext {
   onMemoryWritten?: (file: string, excerpt: string, reason: string) => void;
   /** task 工具：派生子代理（上下文隔离，返回浓缩结论）。由 Loop 注入；agentName 指定代理定义。 */
   spawnSubagent?: (task: string, parentCallId: string, agentName?: string) => Promise<string>;
+  /**
+   * M1：会话级任务清单。由 Loop 注入（write 时落 todo.list_updated 事件）；
+   * 子代理上下文不注入——子代理不继承父 todo 列表。
+   */
+  todos?: {
+    read: () => TodoItem[];
+    /** 全量覆盖 */
+    write: (todos: TodoItem[]) => void;
+  };
 }
 
 export interface ToolResult {
@@ -43,6 +54,10 @@ export interface ToolDefinition {
   permission: "always-allow" | "workspace-write" | "always-ask";
   /** 从参数中提取涉及的文件路径（供权限服务判断越界与敏感路径） */
   involvedPaths?: (args: Args) => string[];
+  /** M4：从参数中提取出站 URL（供权限服务做 SSRF deny_builtin 检查） */
+  involvedUrls?: (args: Args) => string[];
+  /** M4：false 时对子代理隐藏（子代理直接执行、无审批流，联网工具默认不进子代理工具面） */
+  subagentVisible?: boolean;
   riskSummary?: (args: Args) => string;
   execute: (args: Args, ctx: ToolContext) => Promise<ToolResult>;
 }
@@ -279,32 +294,116 @@ export class ToolRegistry {
    * 转成模型适配层用的工具描述。
    * 模式决定工具面（Loop 不变，工具面变）：
    * plan 模式只暴露只读工具，从模型侧杜绝「还没想清楚就改文件」。
+   *
+   * M2：agentTools 为代理定义的工具面声明，在模式过滤之后叠加：
+   *   - "readonly"：只保留只读工具
+   *   - string[]：显式白名单（取交集）
+   *   - "all" / undefined：不再收窄
    */
-  toModelSpecs(mode: "plan" | "build" = "build"): { name: string; description: string; parameters: Record<string, unknown> }[] {
-    return this.list()
-      .filter((t) => mode === "build" || t.permission === "always-allow")
-      .map((t) => ({
-        name: t.name,
-        description: t.description,
-        parameters: z.toJSONSchema(t.argsSchema) as Record<string, unknown>,
-      }));
+  toModelSpecs(
+    mode: "plan" | "build" = "build",
+    agentTools?: "readonly" | "all" | string[],
+  ): { name: string; description: string; parameters: Record<string, unknown> }[] {
+    let tools = this.list().filter((t) => mode === "build" || t.permission === "always-allow");
+    if (agentTools === "readonly") {
+      tools = tools.filter((t) => t.permission === "always-allow");
+    } else if (Array.isArray(agentTools)) {
+      const allow = new Set(agentTools);
+      tools = tools.filter((t) => allow.has(t.name));
+    }
+    return tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      parameters: z.toJSONSchema(t.argsSchema) as Record<string, unknown>,
+    }));
   }
 }
 
+// ---------- question（P0：模型主动向用户提问） ----------
+/**
+ * 对齐 OpenCode question / Claude Code AskUserQuestion：
+ * 模型在 turn 中遇到关键歧义时主动提问，而不是猜。
+ * 特殊执行路径：Loop 拦截此工具，复用审批通道（approval.requested/resolved）
+ * 把问题推给前端，answer 随 approval.resolved 落库；execute 仅兜底（不应到达）。
+ */
+const questionTool: ToolDefinition = {
+  name: "question",
+  description:
+    "向用户提问以澄清关键歧义。仅在答案会实质改变执行方案时使用（如多种合理实现路径、破坏性操作确认）；能自行判断的不要问。",
+  permission: "always-allow",
+  subagentVisible: false, // 子代理无审批流，不能提问
+  argsSchema: z.object({
+    question: z.string().describe("要问用户的问题，一句话说清背景与分歧点"),
+    options: z
+      .array(z.string())
+      .max(4)
+      .optional()
+      .describe("可选答案（最多 4 个），用户也可自由作答"),
+  }),
+  riskSummary: (args) => `模型提问：${args.question}`,
+  async execute() {
+    return { result: "[内部错误] question 工具应由 Loop 拦截处理", truncated: false };
+  },
+};
+
+// ---------- skill（P0-3：按需加载技能正文） ----------
+const skillTool: ToolDefinition = {
+  name: "skill",
+  description:
+    "加载指定技能的完整操作指令（技能清单见系统提示「可用技能」节）。仅当任务与技能描述匹配时调用；同一技能加载一次即可。",
+  permission: "always-allow",
+  argsSchema: z.object({
+    name: z.string().describe("技能名（系统提示「可用技能」清单中的名称）"),
+  }),
+  async execute(args, ctx) {
+    const { loadSkills } = await import("../skills/index.js");
+    const skills = loadSkills(ctx.cwd);
+    const def = skills.find((s) => s.name === (args.name as string));
+    if (!def) {
+      const visible = skills.map((s) => s.name).join(", ") || "（无）";
+      throw new Error(`技能不存在: ${String(args.name)}。可用技能：${visible}`);
+    }
+    // 列出技能目录中的附属文件（脚本/模板），供 read/bash 按正文指引使用
+    let extras: string[] = [];
+    try {
+      extras = fs.readdirSync(def.dir).filter((f) => f !== "SKILL.md");
+    } catch {
+      // 目录不可读时忽略附属清单
+    }
+    const header = `[技能 ${def.name}（${def.source === "project" ? "项目" : "全局"}）已加载，目录 ${def.dir}]`;
+    const footer = extras.length
+      ? `\n\n[技能目录附属文件：${extras.join(", ")}，可用 read/bash 使用]`
+      : "";
+    return truncate(`${header}\n${def.body}${footer}`);
+  },
+};
+
 export function createDefaultRegistry(): ToolRegistry {
   const r = new ToolRegistry();
-  for (const t of [readTool, writeTool, editTool, bashTool, bashStatusTool, bashKillTool, globTool, grepTool, memoryWriteTool, taskTool]) {
+  for (const t of [readTool, writeTool, editTool, bashTool, bashStatusTool, bashKillTool, globTool, grepTool, memoryWriteTool, taskTool, todowriteTool, todoreadTool, questionTool, skillTool]) {
     r.register(t);
   }
   return r;
 }
 
-/** 完整工具集：默认工具 + LSP 代码智能工具（语言服务器不可用时优雅降级） */
-export async function createFullRegistry(): Promise<ToolRegistry> {
+/**
+ * 完整工具集：默认工具 + LSP 代码智能工具（语言服务器不可用时优雅降级）
+ * + M4 联网工具（按 ~/.agent/net.json：webfetch 默认启用，websearch 默认不注册）。
+ */
+export async function createFullRegistry(opts: {
+  home?: string;
+  fetchFn?: typeof fetch;
+} = {}): Promise<ToolRegistry> {
   const r = createDefaultRegistry();
   const { lspDiagnosticsTool, lspDefinitionTool, lspReferencesTool } = await import("../lsp/tools.js");
   r.register(lspDiagnosticsTool);
   r.register(lspDefinitionTool);
   r.register(lspReferencesTool);
+  // M4：联网工具注册开关（缺省 = 本地优先降级路径：webfetch 可用、websearch 不出现）
+  const { loadNetConfig } = await import("../config/net.js");
+  const { createWebfetchTool, createWebsearchTool } = await import("./web.js");
+  const net = loadNetConfig(opts.home);
+  if (net.webfetch.enabled) r.register(createWebfetchTool(net.webfetch, { fetchFn: opts.fetchFn }));
+  if (net.websearch.enabled) r.register(createWebsearchTool(net.websearch, { fetchFn: opts.fetchFn }));
   return r;
 }

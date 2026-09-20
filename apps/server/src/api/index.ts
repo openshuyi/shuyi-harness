@@ -21,6 +21,13 @@ import { renderReplayHtml } from "./replay.js";
 import type { AgentRegistry } from "../agents/index.js";
 import { loadProjectConfig } from "../config/project.js";
 import { enrichFromModelsDev } from "../model/modelsdev.js";
+import {
+  loadPermissionRules,
+  appendPermissionRule,
+  deletePermissionRule,
+} from "../permission/config.js";
+import path from "node:path";
+import os from "node:os";
 
 export interface ApiDeps {
   store: EventStore;
@@ -48,6 +55,10 @@ export function createApi(deps: ApiDeps): Hono {
       const configured = loadProjectConfig(body.cwd).model;
       model = configured && deps.models.get(configured) ? configured : deps.models.defaultModel;
     }
+    // M2：起始代理校验（存在才允许绑定）
+    if (body.agent && !deps.agents.get(body.agent, body.cwd)) {
+      return c.json({ error: `代理定义不存在: ${body.agent}` }, 400);
+    }
     const session = deps.sessions.createSession({ ...body, model });
     return c.json(session, 201);
   });
@@ -66,6 +77,21 @@ export function createApi(deps: ApiDeps): Hono {
     const body = PostMessageRequest.parse(await c.req.json());
     deps.sessions.postMessage(c.req.param("id"), body.text);
     return c.json({ ok: true }, 202);
+  });
+
+  // P0-4a：斜杠命令清单（供前端输入 "/" 时自动补全）
+  app.get("/api/sessions/:id/commands", (c) => {
+    return c.json({ commands: deps.sessions.listCommands(c.req.param("id")) });
+  });
+
+  // P1-6：worktree 合并回主分支 / 放弃
+  app.post("/api/sessions/:id/worktree/merge", (c) => {
+    const r = deps.sessions.mergeSessionWorktree(c.req.param("id"));
+    return r.ok ? c.json(r) : c.json(r, 409);
+  });
+  app.post("/api/sessions/:id/worktree/discard", (c) => {
+    const r = deps.sessions.discardSessionWorktree(c.req.param("id"));
+    return r.ok ? c.json(r) : c.json(r, 409);
   });
 
   // 带附件发消息：multipart/form-data（text 字段 + 任意数量文件）
@@ -93,7 +119,14 @@ export function createApi(deps: ApiDeps): Hono {
   });
 
   app.post("/api/sessions/:id/config", async (c) => {
-    const body = await c.req.json();
+    const body = await c.req.json() as { agent?: string };
+    // M2：切换代理前校验定义存在
+    if (body.agent) {
+      const session = deps.sessions.getSession(c.req.param("id"));
+      if (!deps.agents.get(body.agent, session?.cwd)) {
+        return c.json({ error: `代理定义不存在: ${body.agent}` }, 400);
+      }
+    }
     deps.sessions.updateConfig(c.req.param("id"), body);
     return c.json({ ok: true });
   });
@@ -150,10 +183,102 @@ export function createApi(deps: ApiDeps): Hono {
     });
   });
 
-  // ---------- 代理定义（P8-3） ----------
+  // ---------- 代理定义（P8-3 / M2） ----------
   app.get("/api/agents", (c) => {
     const cwd = c.req.query("cwd") || undefined;
     return c.json(deps.agents.list(cwd));
+  });
+
+  // M2：运行时新增/更新代理（持久化 ~/.agent/agents.json；内置代理名拒绝）
+  app.put("/api/agents/:name", async (c) => {
+    const name = c.req.param("name");
+    const body = (await c.req.json()) as {
+      description?: string;
+      tools?: "readonly" | "all" | string[];
+      model?: string;
+      system?: string;
+      /** 设计文档字段名（等价 system） */
+      prompt?: string;
+      modeDefault?: "plan" | "build";
+      permissionOverride?: unknown[];
+    };
+    try {
+      const def = deps.agents.upsertRuntime({
+        name,
+        description: body.description ?? "",
+        tools: body.tools ?? "all",
+        model: body.model,
+        system: body.system ?? body.prompt ?? "",
+        modeDefault: body.modeDefault,
+        permissionOverride: body.permissionOverride,
+      });
+      return c.json(def);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
+    }
+  });
+
+  // M2：删除运行时代理（builtin/project/user 来源只读）
+  app.delete("/api/agents/:name", (c) => {
+    try {
+      deps.agents.removeRuntime(c.req.param("name"));
+      return c.json({ ok: true });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
+  // ---------- 权限规则（M3） ----------
+  // scope=global → ~/.agent/permissions.json；scope=project → <cwd>/.agent/permissions.json
+  const permFile = (scope: string, cwd?: string): string | null => {
+    if (scope === "global") return path.join(os.homedir(), ".agent", "permissions.json");
+    if (scope === "project" && cwd) return path.join(cwd, ".agent", "permissions.json");
+    return null;
+  };
+
+  app.get("/api/permissions/rules", (c) => {
+    const cwd = c.req.query("cwd") || undefined;
+    const { project, global: globalRules } = loadPermissionRules(cwd ?? process.cwd());
+    return c.json({
+      project: project.map((r, i) => ({ ...r, index: i })),
+      global: globalRules.map((r, i) => ({ ...r, index: i })),
+    });
+  });
+
+  app.post("/api/permissions/rules", async (c) => {
+    const body = (await c.req.json()) as {
+      scope?: string;
+      cwd?: string;
+      tool?: string;
+      pattern?: string;
+      patternType?: "glob" | "regex" | "prefix";
+      decision?: "allow" | "ask" | "deny";
+    };
+    const file = permFile(body.scope ?? "", body.cwd);
+    if (!file) return c.json({ error: "scope 须为 global 或 project（project 需带 cwd）" }, 400);
+    if (!body.pattern || !body.decision || !["allow", "ask", "deny"].includes(body.decision)) {
+      return c.json({ error: "缺少 pattern / decision（allow|ask|deny）" }, 400);
+    }
+    try {
+      appendPermissionRule(file, {
+        tool: body.tool || "*",
+        pattern: body.pattern,
+        patternType: body.patternType ?? (/[*?{}[\]]/.test(body.pattern) ? "glob" : "prefix"),
+        decision: body.decision as "allow" | "ask" | "deny",
+      });
+      return c.json({ ok: true }, 201);
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    }
+  });
+
+  app.delete("/api/permissions/rules", async (c) => {
+    const body = (await c.req.json()) as { scope?: string; cwd?: string; index?: number };
+    const file = permFile(body.scope ?? "", body.cwd);
+    if (!file) return c.json({ error: "scope 须为 global 或 project（project 需带 cwd）" }, 400);
+    if (typeof body.index !== "number") return c.json({ error: "缺少 index" }, 400);
+    if (!deletePermissionRule(file, body.index)) return c.json({ error: "规则不存在" }, 404);
+    return c.json({ ok: true });
   });
 
   // ---------- 模型 ----------
@@ -208,6 +333,10 @@ export function createApi(deps: ApiDeps): Hono {
       for (const e of missed) {
         await stream.writeSSE({ data: JSON.stringify(e) });
       }
+      // 无缺口时也立即写一帧提交响应头（新会话无历史事件，避免客户端挂起）
+      if (missed.length === 0) {
+        await stream.writeSSE({ event: "ping", data: "" });
+      }
 
       // 2. 转入实时推送
       let closed = false;
@@ -233,6 +362,51 @@ export function createApi(deps: ApiDeps): Hono {
       });
 
       // 保持连接打开，直到客户端断开
+      await new Promise<void>((resolve) => {
+        const check = setInterval(() => {
+          if (closed) {
+            clearInterval(check);
+            clearInterval(heartbeat);
+            unsubscribe();
+            resolve();
+          }
+        }, 1000);
+      });
+    });
+  });
+
+  // ---------- M5：聚合 SSE 流（多会话分派） ----------
+  // GET /api/events?sessions=a,b,c —— 按订阅集合过滤推送（缺省/空 = 全部会话）。
+  // 单会话流仍是 /api/sessions/:id/events（带缺口补发）；聚合流只做实时通知，不补发。
+  app.get("/api/events", (c) => {
+    const param = c.req.query("sessions")?.trim();
+    const sessionIds = param ? new Set(param.split(",").map((s) => s.trim()).filter(Boolean)) : null;
+
+    return streamSSE(c, async (stream) => {
+      let closed = false;
+      const unsubscribe = deps.bus.subscribe((event) => {
+        if (closed) return;
+        if (sessionIds && !sessionIds.has(event.session_id)) return;
+        void stream.writeSSE({ data: JSON.stringify(event) }).catch(() => {
+          closed = true;
+          unsubscribe();
+        });
+      });
+      // 立即写一帧提交响应头（聚合流无补发，否则客户端等到首个事件才拿到响应）
+      await stream.writeSSE({ event: "ping", data: "" });
+
+      const heartbeat = setInterval(() => {
+        void stream.writeSSE({ event: "ping", data: "" }).catch(() => {
+          closed = true;
+        });
+      }, 15000);
+
+      stream.onAbort(() => {
+        closed = true;
+        clearInterval(heartbeat);
+        unsubscribe();
+      });
+
       await new Promise<void>((resolve) => {
         const check = setInterval(() => {
           if (closed) {

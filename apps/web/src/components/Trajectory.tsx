@@ -3,7 +3,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { TimelineItem } from "../core/reducer.js";
-import { useSessionStore } from "../core/store.js";
+import { useSessionStore, type PaneSlot } from "../core/store.js";
 
 const STATUS_LABEL: Record<string, string> = {
   proposed: "已提议",
@@ -75,8 +75,10 @@ function itemSource(item: TimelineItem): SourceFilter {
   }
 }
 
-export function Trajectory() {
-  const { trajectory, current, rollback } = useSessionStore();
+export function Trajectory({ slot = "primary" }: { slot?: PaneSlot }) {
+  const trajectory = useSessionStore((s) => (slot === "secondary" ? s.splitTrajectory : s.trajectory));
+  const current = useSessionStore((s) => (slot === "secondary" ? s.split : s.current));
+  const { rollback } = useSessionStore();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [hidden, setHidden] = useState<Set<SourceFilter>>(new Set());
   const [rollingBack, setRollingBack] = useState(false);
@@ -89,9 +91,15 @@ export function Trajectory() {
     return (
       <div className="trajectory">
         <div className="empty-state">
-          选择或创建一个会话开始
-          <br />
-          <small>Mock 模型下可用 !write / !read / !bash 指令体验工具调用与审批流</small>
+          <div className="empty-brand">Shuyi Agent</div>
+          <div>选择左侧会话，或点击「+ 新会话」开始</div>
+          <div className="empty-hints">
+            <span className="empty-hint"><code>/</code> 斜杠命令</span>
+            <span className="empty-hint">📎 附件</span>
+            <span className="empty-hint">⇄ 双栏并行</span>
+            <span className="empty-hint">⎇ worktree 隔离</span>
+            <span className="empty-hint"><code>!write !bash</code> Mock 体验</span>
+          </div>
         </div>
       </div>
     );
@@ -127,7 +135,7 @@ export function Trajectory() {
               const base = trajectory.baselines[trajectory.baselines.length - 1];
               if (!confirm(`确定回滚？工作区将恢复到最近一轮开始前的状态（提交 ${base.baseCommit}）。\n当前未提交改动会先自动保存为一个提交。`)) return;
               setRollingBack(true);
-              rollback(base.baseCommit)
+              rollback(slot, base.baseCommit)
                 .catch((err) => alert(err instanceof Error ? err.message : String(err)))
                 .finally(() => setRollingBack(false));
             }}
@@ -155,7 +163,9 @@ export function Trajectory() {
           case "assistant":
             return (
               <div className="msg" key={item.key}>
-                <div className="msg-label">助手{item.streaming ? "（输出中…）" : ""}</div>
+                <div className="msg-label">
+                  助手{item.streaming ? <span className="shimmer"> · 输出中…</span> : ""}
+                </div>
                 <div className="msg-assistant">{item.text}</div>
               </div>
             );

@@ -53,7 +53,12 @@ export async function runSubagent(
       .toModelSpecs("build")
       .filter((s) => {
         const t = tools.get(s.name);
-        return t?.permission === "always-allow" && s.name !== "task" && s.name !== "memory_write";
+        return (
+          t?.permission === "always-allow" &&
+          t.subagentVisible !== false && // M4：联网工具对子代理默认隐藏
+          s.name !== "task" &&
+          s.name !== "memory_write"
+        );
       });
     if (agent && Array.isArray(agent.tools)) {
       const allow = new Set(agent.tools);

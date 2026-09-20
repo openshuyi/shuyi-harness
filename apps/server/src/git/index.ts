@@ -82,3 +82,61 @@ export function rollbackTo(cwd: string, commit: string): { ok: boolean; error?: 
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// ---------- P1-6：worktree 隔离（并行会话写隔离） ----------
+
+export interface WorktreeInfo {
+  repo_root: string;
+  worktree_path: string;
+  branch: string;
+}
+
+/** 找仓库根（非仓库返回 null） */
+export function repoRoot(cwd: string): string | null {
+  const r = git(cwd, ["rev-parse", "--show-toplevel"]);
+  return r.ok && r.stdout ? r.stdout : null;
+}
+
+/**
+ * 为会话创建独立 worktree：<repo>/.agent/worktrees/<sid 前8位>，新分支 agent/<sid 前8位>。
+ * 并行会话各自在隔离工作区写文件，互不踩踏；完成后 mergeWorktree 合并回主分支。
+ * 失败返回 null（调用方降级为普通会话）。
+ */
+export function createWorktree(cwd: string, sessionId: string): WorktreeInfo | null {
+  const root = repoRoot(cwd);
+  if (!root) return null;
+  const short = sessionId.replace(/-/g, "").slice(0, 8);
+  const branch = `agent/${short}`;
+  const worktreePath = path.join(root, ".agent", "worktrees", short);
+  fs.mkdirSync(path.dirname(worktreePath), { recursive: true });
+  const r = git(root, ["worktree", "add", worktreePath, "-b", branch]);
+  if (!r.ok) return null;
+  // .agent 不应进版本库（worktree 目录嵌在仓库内）
+  const exclude = path.join(root, ".git", "info", "exclude");
+  try {
+    const cur = fs.existsSync(exclude) ? fs.readFileSync(exclude, "utf-8") : "";
+    if (!cur.includes(".agent/worktrees")) fs.appendFileSync(exclude, "\n.agent/worktrees/\n");
+  } catch {
+    // exclude 写入失败不阻塞（最坏情况是 .agent/worktrees 出现在 git status）
+  }
+  return { repo_root: root, worktree_path: worktreePath, branch };
+}
+
+/**
+ * 把 worktree 分支合并回主工作区当前分支，然后移除 worktree 与分支。
+ * 合并冲突时返回错误（worktree 保留，用户手工处理）。
+ */
+export function mergeWorktree(info: WorktreeInfo): { ok: boolean; error?: string } {
+  const r = git(info.repo_root, ["merge", "--no-edit", info.branch]);
+  if (!r.ok) return { ok: false, error: r.stdout || "合并失败（可能存在冲突）" };
+  git(info.repo_root, ["worktree", "remove", info.worktree_path, "--force"]);
+  git(info.repo_root, ["branch", "-D", info.branch]);
+  return { ok: true };
+}
+
+/** 放弃 worktree：移除工作区与分支（未合并的改动随分支删除）。 */
+export function discardWorktree(info: WorktreeInfo): { ok: boolean; error?: string } {
+  const r = git(info.repo_root, ["worktree", "remove", info.worktree_path, "--force"]);
+  git(info.repo_root, ["branch", "-D", info.branch]);
+  return r.ok ? { ok: true } : { ok: false, error: r.stdout || "worktree 移除失败" };
+}

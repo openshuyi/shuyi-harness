@@ -53,7 +53,9 @@ export interface EventStore {
   setSessionStatus(sessionId: string, status: SessionStatus): void;
   updateSessionConfig(
     sessionId: string,
-    patch: Partial<Pick<SessionRecord, "mode" | "model" | "sandbox_level" | "title" | "archived">>,
+    patch: Partial<Pick<SessionRecord, "mode" | "model" | "sandbox_level" | "title" | "archived" | "cwd">> & {
+      worktree?: SessionRecord["worktree"] | null;
+    },
   ): void;
   copyEventsTo(targetSessionId: string, sourceSessionId: string, fromSeq: number, toSeq: number): void;
 }
@@ -110,6 +112,10 @@ interface SessionRow {
   archived: number;
   forked_from: string | null;
   caller_identity: string;
+  /** M2：会话绑定的代理定义名（迁移前旧库无此列，row 上可能为 undefined） */
+  agent?: string | null;
+  /** P1-6：worktree 隔离信息（JSON；迁移前旧库无此列） */
+  worktree?: string | null;
 }
 
 export class SqliteEventStore implements EventStore {
@@ -126,6 +132,25 @@ export class SqliteEventStore implements EventStore {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /**
+   * 向后兼容迁移（只允许 ALTER TABLE ADD COLUMN，见 v0.3 设计总则 §0.4）：
+   * - v0.3 / M2：sessions.agent（会话绑定的代理定义名）
+   */
+  private migrate(): void {
+    const cols = this.db
+      .query<{ name: string }, []>("PRAGMA table_info(sessions)")
+      .all()
+      .map((r) => r.name);
+    if (!cols.includes("agent")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN agent TEXT");
+    }
+    // P1-6：sessions.worktree（worktree 隔离信息 JSON）
+    if (!cols.includes("worktree")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN worktree TEXT");
+    }
   }
 
   private rowToEvent(row: EventRow): AgentEvent {
@@ -236,6 +261,8 @@ export class SqliteEventStore implements EventStore {
       archived: row.archived === 1,
       forked_from: row.forked_from,
       caller_identity: row.caller_identity,
+      agent: row.agent ?? undefined,
+      worktree: row.worktree ? (JSON.parse(row.worktree) as SessionRecord["worktree"]) : undefined,
       status: this.currentStatus(row.session_id),
       last_seq: this.latestSeq(row.session_id),
       usage: this.totalUsage(row.session_id),
@@ -298,8 +325,8 @@ export class SqliteEventStore implements EventStore {
   createSession(record: Omit<SessionRecord, "status" | "last_seq">): SessionRecord {
     this.db
       .query(
-        `INSERT INTO sessions (session_id, title, cwd, mode, model, sandbox_level, created_at, archived, forked_from, caller_identity)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO sessions (session_id, title, cwd, mode, model, sandbox_level, created_at, archived, forked_from, caller_identity, agent, worktree)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         record.session_id,
@@ -312,6 +339,8 @@ export class SqliteEventStore implements EventStore {
         record.archived ? 1 : 0,
         record.forked_from,
         record.caller_identity,
+        record.agent ?? null,
+        record.worktree ? JSON.stringify(record.worktree) : null,
       );
     return this.getSession(record.session_id)!;
   }
@@ -343,14 +372,18 @@ export class SqliteEventStore implements EventStore {
 
   updateSessionConfig(
     sessionId: string,
-    patch: Partial<Pick<SessionRecord, "mode" | "model" | "sandbox_level" | "title" | "archived">>,
+    patch: Partial<Pick<SessionRecord, "mode" | "model" | "sandbox_level" | "title" | "archived" | "agent" | "cwd">> & {
+      worktree?: SessionRecord["worktree"] | null;
+    },
   ): void {
     const sets: string[] = [];
-    const vals: (string | number)[] = [];
+    const vals: (string | number | null)[] = [];
     for (const [k, v] of Object.entries(patch)) {
       if (v === undefined) continue;
       sets.push(`${k} = ?`);
-      vals.push(k === "archived" ? (v ? 1 : 0) : (v as string));
+      if (k === "archived") vals.push(v ? 1 : 0);
+      else if (k === "worktree") vals.push(v ? JSON.stringify(v) : null);
+      else vals.push(v as string | null);
     }
     if (sets.length === 0) return;
     vals.push(sessionId);

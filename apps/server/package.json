@@ -5,15 +5,18 @@
   "scripts": {
     "dev": "bun --hot src/index.ts",
     "start": "bun src/index.ts",
-    "headless": "bun src/headless.ts"
+    "headless": "bun src/headless.ts",
+    "acp": "bun src/index.ts --acp"
   },
   "dependencies": {
     "hono": "^4.6.0",
     "zod": "^4.1.0",
+    "picomatch": "^4.0.2",
     "@modelcontextprotocol/sdk": "^1.18.0",
     "@shuyi/types": "*"
   },
   "devDependencies": {
+    "@types/picomatch": "^4.0.3",
     "typescript-language-server": "^4.3.3"
   }
 }

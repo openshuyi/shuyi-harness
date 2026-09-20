@@ -13,12 +13,25 @@ import type { PermissionService } from "../permission/index.js";
 import { PermissionService as PermissionServiceImpl } from "../permission/index.js";
 import type { RuntimeModelRegistry } from "../model/registry.js";
 import { runTurn } from "../loop/index.js";
-import { rollbackTo } from "../git/index.js";
+import { TodoStore, restoreTodosFromEvents } from "../tools/todo.js";
+import { rollbackTo, createWorktree, mergeWorktree, discardWorktree } from "../git/index.js";
 import { AgentRegistry } from "../agents/index.js";
 import { loadProjectConfig } from "../config/project.js";
+import { loadPermissionRules } from "../permission/config.js";
+import { tryExpandCommandInput, loadCommands, type CommandDefinition } from "../commands/index.js";
+
+/** M3：审批决议（remember_pattern = 记住一条 glob 规则，粒度细于 remember_rule 的整工具放行） */
+export interface ApprovalResolution {
+  decision: "approve" | "deny";
+  remember_rule?: string;
+  remember_pattern?: string;
+  deny_reason?: string;
+  /** P0：question 工具的用户回答 */
+  answer?: string;
+}
 
 interface PendingApproval {
-  resolve: (r: { decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string }) => void;
+  resolve: (r: ApprovalResolution) => void;
 }
 
 export class SessionManager {
@@ -28,6 +41,8 @@ export class SessionManager {
   private pendingApprovals = new Map<string, PendingApproval>();
   /** 每会话独立的权限服务（记住的规则是会话作用域） */
   private permissions = new Map<string, PermissionService>();
+  /** M1：会话级任务清单（内存缓存；重启后从事件日志的 todo.list_updated 重建） */
+  private todos: TodoStore;
 
   constructor(
     private store: EventStore,
@@ -35,7 +50,11 @@ export class SessionManager {
     private models: RuntimeModelRegistry,
     /** P8-3：代理定义注册表（task 工具 / 自动标题共用） */
     private agents: AgentRegistry = new AgentRegistry(),
-  ) {}
+  ) {
+    this.todos = new TodoStore((sessionId) =>
+      restoreTodosFromEvents(this.store.readSince(sessionId, -1)),
+    );
+  }
 
   createSession(opts: {
     title?: string;
@@ -43,12 +62,18 @@ export class SessionManager {
     mode: SessionMode;
     model: string;
     sandbox_level: SandboxLevel;
+    /** M2：起始代理定义名（缺省为内置 build 代理） */
+    agent?: string;
+    /** P1-6：在独立 git worktree 中运行（并行会话写隔离）；非仓库自动降级为普通会话 */
+    worktree?: boolean;
   }): SessionRecord {
     const sessionId = randomUUID();
+    // P1-6：worktree 隔离——会话 cwd 指向独立工作区（分支 agent/<short>）
+    const wt = opts.worktree ? createWorktree(opts.cwd, sessionId) : null;
     const record = this.store.createSession({
       session_id: sessionId,
       title: opts.title ?? `会话 ${new Date().toLocaleString("zh-CN")}`,
-      cwd: opts.cwd,
+      cwd: wt?.worktree_path ?? opts.cwd,
       mode: opts.mode,
       model: opts.model,
       sandbox_level: opts.sandbox_level,
@@ -56,6 +81,8 @@ export class SessionManager {
       archived: false,
       forked_from: null,
       caller_identity: "local-user", // 身份挂钩：个人版常量
+      agent: opts.agent,
+      worktree: wt ?? undefined,
     });
     this.store.append({
       session_id: sessionId,
@@ -67,6 +94,7 @@ export class SessionManager {
         mode: record.mode,
         model: record.model,
         sandbox_level: record.sandbox_level,
+        agent: record.agent,
       },
     });
     return this.store.getSession(sessionId)!;
@@ -76,8 +104,68 @@ export class SessionManager {
     return this.store.getSession(sessionId);
   }
 
+  /** M5：列表项增强——附 activeCallCount（当前挂起审批数，供列表徽标展示） */
   listSessions(): SessionRecord[] {
-    return this.store.listSessions();
+    const pendingCount = new Map<string, number>();
+    for (const key of this.pendingApprovals.keys()) {
+      const sid = key.slice(0, key.indexOf(":"));
+      pendingCount.set(sid, (pendingCount.get(sid) ?? 0) + 1);
+    }
+    return this.store
+      .listSessions()
+      .map((s) => ({ ...s, activeCallCount: pendingCount.get(s.session_id) ?? 0 }));
+  }
+
+  /** P0-4a：列出会话可用的斜杠命令（项目 + 全局合并） */
+  listCommands(sessionId: string): CommandDefinition[] {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    return loadCommands(session.cwd);
+  }
+
+  /**
+   * P1-6：合并 worktree 分支回主分支并清理（会话 cwd 切回仓库根）。
+   * 冲突时保留 worktree 供手工处理。
+   */
+  mergeSessionWorktree(sessionId: string): { ok: boolean; error?: string } {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    if (!session.worktree) return { ok: false, error: "不是 worktree 隔离会话" };
+    if (session.status === "running" || session.status === "awaiting_approval") {
+      return { ok: false, error: "会话正忙，请先等待或中断" };
+    }
+    const wt = session.worktree;
+    const r = mergeWorktree(wt);
+    if (!r.ok) return r;
+    this.store.updateSessionConfig(sessionId, { cwd: wt.repo_root, worktree: null });
+    this.store.append({
+      session_id: sessionId,
+      type: "session.config_changed",
+      actor: "user",
+      payload: { agent: session.agent },
+    });
+    return { ok: true };
+  }
+
+  /** P1-6：放弃 worktree（未合并改动随分支删除，会话 cwd 切回仓库根）。 */
+  discardSessionWorktree(sessionId: string): { ok: boolean; error?: string } {
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new Error(`会话不存在: ${sessionId}`);
+    if (!session.worktree) return { ok: false, error: "不是 worktree 隔离会话" };
+    if (session.status === "running" || session.status === "awaiting_approval") {
+      return { ok: false, error: "会话正忙，请先等待或中断" };
+    }
+    const wt = session.worktree;
+    const r = discardWorktree(wt);
+    if (!r.ok) return r;
+    this.store.updateSessionConfig(sessionId, { cwd: wt.repo_root, worktree: null });
+    this.store.append({
+      session_id: sessionId,
+      type: "session.config_changed",
+      actor: "user",
+      payload: { agent: session.agent },
+    });
+    return { ok: true };
   }
 
   postMessage(sessionId: string, text: string): void {
@@ -118,16 +206,23 @@ export class SessionManager {
     const adapter = this.models.get(session.model);
     if (!adapter) throw new Error(`模型不可用: ${session.model}`);
 
+    // P0-4a：斜杠命令展开（~/.agent/commands、<cwd>/.agent/commands；未命中按原文）
+    const cmdHit = tryExpandCommandInput(text, session.cwd);
+    const expandedText = cmdHit ? cmdHit.expanded : text;
+
     // 附件落事件（在轮次开始前，保证 message.user 事件带附件信息）
     const effectiveText = attachments.length
-      ? `${text}\n\n[附件 ${attachments.length} 个，可用 read 工具读取：${attachments.map((a) => a.path).join(", ")}]`
-      : text;
+      ? `${expandedText}\n\n[附件 ${attachments.length} 个，可用 read 工具读取：${attachments.map((a) => a.path).join(", ")}]`
+      : expandedText;
 
     const permission = this.permissionFor(sessionId);
     // P8-5：项目级预置权限规则（shuyi.json permissions）在轮次开始前应用
     const projectCfg = loadProjectConfig(session.cwd);
     for (const name of projectCfg.permissions?.allow ?? []) permission.rememberRule(name, "allow");
     for (const name of projectCfg.permissions?.deny ?? []) permission.rememberRule(name, "deny");
+    // M3：用户配置规则（项目 .agent/permissions.json 优先于全局 ~/.agent/permissions.json）
+    const cfg = loadPermissionRules(session.cwd);
+    permission.setUserConfigRules([...cfg.project, ...cfg.global]);
 
     const controller = new AbortController();
     this.abortControllers.set(sessionId, controller);
@@ -138,6 +233,7 @@ export class SessionManager {
       waitForApproval: (sid, approvalId) => this.waitForApproval(sid, approvalId),
       agents: this.agents,
       models: this.models,
+      todos: this.todos,
     }, controller.signal).finally(() => {
       this.abortControllers.delete(sessionId);
       // P8-4：首轮完成后自动生成会话标题（失败静默，不影响主流程）
@@ -206,7 +302,7 @@ export class SessionManager {
   resolveApproval(
     sessionId: string,
     approvalId: string,
-    resolution: { decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string },
+    resolution: ApprovalResolution,
   ): boolean {
     const key = `${sessionId}:${approvalId}`;
     const pending = this.pendingApprovals.get(key);
@@ -219,7 +315,7 @@ export class SessionManager {
   private waitForApproval(
     sessionId: string,
     approvalId: string,
-  ): Promise<{ decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string }> {
+  ): Promise<ApprovalResolution> {
     return new Promise((resolve) => {
       this.pendingApprovals.set(`${sessionId}:${approvalId}`, { resolve });
     });
@@ -227,7 +323,7 @@ export class SessionManager {
 
   updateConfig(
     sessionId: string,
-    patch: { mode?: SessionMode; model?: string; sandbox_level?: SandboxLevel },
+    patch: { mode?: SessionMode; model?: string; sandbox_level?: SandboxLevel; agent?: string },
   ): void {
     const session = this.store.getSession(sessionId);
     if (!session) throw new Error(`会话不存在: ${sessionId}`);
@@ -251,6 +347,7 @@ export class SessionManager {
       mode: source.mode,
       model: source.model,
       sandbox_level: source.sandbox_level,
+      agent: source.agent,
     });
     // 复制 [0, atSeq] 事件（session.created 事件除外，新会话已有自己的）
     const events = this.store.readRange(sessionId, 0, atSeq);

@@ -6,7 +6,9 @@ import { randomUUID } from "node:crypto";
 import type { SessionRecord } from "@shuyi/types";
 import type { EventStore } from "../store/event-store.js";
 import type { ToolRegistry, ToolContext } from "../tools/index.js";
+import { formatTodoAppendix, type TodoStore } from "../tools/todo.js";
 import type { PermissionService } from "../permission/index.js";
+import { sanitizeRules } from "../permission/index.js";
 import type { ModelAdapter } from "../model/types.js";
 import { estimateCost } from "../model/types.js";
 import {
@@ -23,7 +25,9 @@ import { ensureRepo, commitFiles, headCommit } from "../git/index.js";
 import { postEditDiagnostics } from "../lsp/post-edit.js";
 import type { AgentRegistry } from "../agents/index.js";
 import type { ModelAdapter as ModelAdapterT } from "../model/types.js";
-import { loadProjectConfig } from "../config/project.js";
+import { loadProjectConfig, loadAgentsMd } from "../config/project.js";
+import { skillsPromptSection } from "../skills/index.js";
+import { runBeforeHooks, runObserveHooks, hooksPresent, type HookRunResult } from "../hooks/index.js";
 
 export interface LoopDeps {
   store: EventStore;
@@ -32,11 +36,21 @@ export interface LoopDeps {
   waitForApproval: (
     sessionId: string,
     approvalId: string,
-  ) => Promise<{ decision: "approve" | "deny"; remember_rule?: string; deny_reason?: string }>;
+  ) => Promise<{
+    decision: "approve" | "deny";
+    remember_rule?: string;
+    /** M3：记住的 glob 规则模式 */
+    remember_pattern?: string;
+    deny_reason?: string;
+    /** P0：question 工具的回答 */
+    answer?: string;
+  }>;
   /** P8-3：代理定义注册表（task 工具的 agent 参数解析） */
   agents?: AgentRegistry;
   /** P8-3：代理定义指定 model 时解析适配器 */
   models?: { get(id: string): ModelAdapterT | undefined };
+  /** M1：会话级任务清单（todowrite/todoread 的状态载体 + 每迭代 system 附录注入） */
+  todos?: TodoStore;
 }
 
 const MAX_TOOL_ITERATIONS = 40; // 单轮工具调用上限，防失控
@@ -50,6 +64,15 @@ function contextWindow(): number {
  * （插在 messages[0] 之后会在单消息会话中让记忆成为最后一条，
  *  导致模型/适配器把记忆误认为用户请求——已踩坑修复）
  */
+/** M1：在系统提示尾部追加任务清单附录（列表为空时原样返回） */
+function withTodoAppendix(
+  system: string,
+  todos: import("@shuyi/types").TodoItem[] | undefined,
+): string {
+  const appendix = formatTodoAppendix(todos ?? []);
+  return appendix ? `${system}\n\n${appendix}` : system;
+}
+
 function assembleWithMemory(
   messages: import("../model/types.js").ChatMessage[],
   memory: string | null,
@@ -90,25 +113,67 @@ export async function runTurn(
   let totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
   let iterations = 0;
   // P8-5：项目级指令（shuyi.json）注入系统提示尾部，每轮加载一次
-  const projectInstructions = loadProjectConfig(session.cwd).instructions;
+  // P0-4b：AGENTS.md（项目根 + 全局）自动并入指令（Codex/OpenCode 约定）
+  const turnProjectCfg = loadProjectConfig(session.cwd);
+  const projectInstructions = [
+    turnProjectCfg.instructions,
+    loadAgentsMd(session.cwd),
+  ].filter(Boolean).join("\n\n") || undefined;
+  // P0-3：技能清单（渐进披露——只放名称+描述，正文由 skill 工具按需加载）
+  const skillsSection = skillsPromptSection(session.cwd);
+  // P1-5：hook 开关（shuyi.json hooks:true 显式开启才执行，fail-closed 默认关）
+  const hooksEnabled = turnProjectCfg.hooks === true && hooksPresent(session.cwd);
+  /** hook 执行审计落事件（事件溯源可审计） */
+  const appendHookRuns = (runs: HookRunResult[], blockedReason?: string) => {
+    for (const r of runs) {
+      store.append({
+        session_id: sid,
+        type: "hook.executed",
+        actor: "system",
+        turn_id: turnId,
+        payload: {
+          hook: r.hook,
+          point: r.point,
+          exit_code: r.exitCode,
+          duration_ms: r.durationMs,
+          timed_out: r.timedOut,
+          blocked_reason: blockedReason,
+          stderr_excerpt: r.stderr.slice(0, 300) || undefined,
+        },
+      });
+    }
+  };
 
   try {
     for (;;) {
       if (signal.aborted) return abortTurn(store, sid, turnId, "用户中断");
 
       // ---- 组装上下文（每次迭代重新 fold，保证工具结果已折回） ----
-      // 模式决定工具面（Loop 不变）：plan 模式只暴露只读工具
-      const specs = tools.toModelSpecs(session.mode);
+      // M2：代理定义驱动——prompt/工具面/模型覆盖每迭代从会话当前代理解析；
+      // plan 代理等价旧 Plan 模式（modeDefault），Loop 不再有硬编码模式分支。
+      const agentDef = session.agent ? deps.agents?.get(session.agent, session.cwd) : undefined;
+      const effectiveMode = agentDef?.modeDefault ?? session.mode;
+      const effectiveSession = effectiveMode === session.mode ? session : { ...session, mode: effectiveMode };
+      const specs = tools.toModelSpecs(effectiveMode, agentDef?.tools);
+      const turnAdapter =
+        (agentDef?.model ? deps.models?.get(agentDef.model) : undefined) ?? adapter;
+      const agentSection = agentDef ? `## 代理角色（${agentDef.name}）\n${agentDef.system}` : "";
+      const systemSuffix = [agentSection, projectInstructions, skillsSection].filter(Boolean).join("\n\n");
+
       const memory = readMemory(session.cwd);
-      let { system, messages } = rebuildContext(store, session, specs, projectInstructions);
+      let { system, messages } = rebuildContext(store, effectiveSession, specs, systemSuffix || undefined);
+      // M1：任务清单附录注入。清单来自 TodoStore（会话级状态）而非事件 fold，
+      // 因此 compaction 后依然保留（compaction 保留项）。
+      system = withTodoAppendix(system, deps.todos?.get(sid));
       let allMessages = assembleWithMemory(messages, memory);
       let tokenEstimate =
         estimateTokens(system) + estimateMessagesTokens(allMessages);
 
       // ---- 压缩：填充 ~75% 触发，压缩后重建再继续 ----
       if (shouldCompact(tokenEstimate, contextWindow())) {
-        await compactSession(store, sid, turnId, allMessages, adapter);
-        ({ system, messages } = rebuildContext(store, session, specs, projectInstructions));
+        await compactSession(store, sid, turnId, allMessages, turnAdapter);
+        ({ system, messages } = rebuildContext(store, effectiveSession, specs, systemSuffix || undefined));
+        system = withTodoAppendix(system, deps.todos?.get(sid));
         allMessages = assembleWithMemory(messages, memory);
         tokenEstimate = estimateTokens(system) + estimateMessagesTokens(allMessages);
       }
@@ -122,13 +187,13 @@ export async function runTurn(
           prefix_hash: prefixHash(system),
           message_count: allMessages.length,
           token_estimate: tokenEstimate,
-          model: session.model,
+          model: agentDef?.model ?? session.model,
         },
       });
 
-      // ---- 调用模型（流式） ----
-      const result = await adapter.streamChat(
-        { model: session.model, system, messages: allMessages, tools: specs },
+      // ---- 调用模型（流式；M2：代理定义可覆盖模型） ----
+      const result = await turnAdapter.streamChat(
+        { model: agentDef?.model ?? session.model, system, messages: allMessages, tools: specs },
         {
           onTextDelta: (d) =>
             store.append({
@@ -231,13 +296,94 @@ export async function runTurn(
         }
         const args = parsed.data as Record<string, unknown>;
 
-        // ---- 权限裁决 ----
+        // ---- P0：question 工具——复用审批通道把问题推给用户，不走权限裁决/常规执行 ----
+        if (tool.name === "question") {
+          const qProposed = store.append({
+            session_id: sid,
+            type: "tool.call.proposed",
+            actor: "agent",
+            turn_id: turnId,
+            payload: { call_id: call.id, tool: call.name, args, permission_hint: "ask" },
+          });
+          const qApprovalId = randomUUID();
+          store.append({
+            session_id: sid,
+            type: "approval.requested",
+            actor: "system",
+            turn_id: turnId,
+            causation_id: qProposed.event_id,
+            payload: {
+              approval_id: qApprovalId,
+              call_id: call.id,
+              tool: call.name,
+              args,
+              risk_summary: `模型提问：${args.question}`,
+            },
+          });
+          store.setSessionStatus(sid, "awaiting_approval");
+          const qResolution = await deps.waitForApproval(sid, qApprovalId);
+          store.setSessionStatus(sid, "running");
+          store.append({
+            session_id: sid,
+            type: "approval.resolved",
+            actor: "user",
+            turn_id: turnId,
+            causation_id: qProposed.event_id,
+            payload: {
+              approval_id: qApprovalId,
+              decision: qResolution.decision,
+              answer: qResolution.answer,
+              deny_reason: qResolution.deny_reason,
+            },
+          });
+          if (qResolution.decision === "deny") {
+            store.append({
+              session_id: sid,
+              type: "tool.call.failed",
+              actor: "system",
+              turn_id: turnId,
+              causation_id: qProposed.event_id,
+              payload: {
+                call_id: call.id,
+                error: `[用户拒绝回答] ${qResolution.deny_reason ?? "未提供理由"}。请按你的最佳判断继续，不要再追问。`,
+                duration_ms: 0,
+              },
+            });
+          } else {
+            store.append({
+              session_id: sid,
+              type: "tool.call.started",
+              actor: "system",
+              turn_id: turnId,
+              causation_id: qProposed.event_id,
+              payload: { call_id: call.id },
+            });
+            store.append({
+              session_id: sid,
+              type: "tool.call.completed",
+              actor: "system",
+              turn_id: turnId,
+              causation_id: qProposed.event_id,
+              payload: {
+                call_id: call.id,
+                result: `用户回答：${qResolution.answer?.trim() || "（用户未作答，按你的最佳判断继续）"}`,
+                truncated: false,
+                duration_ms: 0,
+              },
+            });
+          }
+          continue;
+        }
+
+        // ---- 权限裁决（M2：plan 代理等价旧 Plan 模式兜底） ----
         const verdict = permission.classify({
           tool,
           args,
           cwd: session.cwd,
           sandboxLevel: session.sandbox_level,
-          mode: session.mode,
+          mode: effectiveMode,
+          // M3：代理定义声明的权限覆盖（permissionOverride），优先级仅次于内置敏感拒绝
+          agentRules: sanitizeRules(agentDef?.permissionOverride ?? [], "agent"),
         });
 
         const proposedEvent = store.append({
@@ -290,6 +436,7 @@ export async function runTurn(
               approval_id: approvalId,
               decision: resolution.decision,
               remember_rule: resolution.remember_rule,
+              remember_pattern: resolution.remember_pattern,
               deny_reason: resolution.deny_reason,
             },
           });
@@ -311,6 +458,41 @@ export async function runTurn(
           }
           if (resolution.remember_rule) {
             permission.rememberRule(call.name, "allow");
+          }
+          // M3：更细粒度的"记住"——按 glob 模式放行（如 "tests/**"、"git status*"）
+          if (resolution.remember_pattern) {
+            permission.rememberPatternRule({
+              tool: call.name,
+              pattern: resolution.remember_pattern,
+              patternType: "glob",
+              decision: "allow",
+            });
+          }
+        }
+
+        // ---- P1-5：tool.execute.before 钩子（权限放行后、执行前；非零退出即阻止，fail-closed） ----
+        if (hooksEnabled) {
+          const before = await runBeforeHooks(session.cwd, {
+            session_id: sid,
+            tool: call.name,
+            args,
+            cwd: session.cwd,
+          });
+          appendHookRuns(before.runs, before.blocked);
+          if (before.blocked) {
+            store.append({
+              session_id: sid,
+              type: "tool.call.failed",
+              actor: "system",
+              turn_id: turnId,
+              causation_id: proposedEvent.event_id,
+              payload: {
+                call_id: call.id,
+                error: `[Hook 阻止] ${before.blocked}`,
+                duration_ms: 0,
+              },
+            });
+            continue;
           }
         }
 
@@ -345,6 +527,22 @@ export async function runTurn(
               causation_id: proposedEvent.event_id,
               payload: { file, excerpt, reason },
             }),
+          // M1：任务清单读写。write = 全量覆盖 + 落 todo.list_updated 事件
+          //（SSE 推给 Web 任务面板；事件回放/重启后由 TodoStore 重建）
+          todos: deps.todos && {
+            read: () => deps.todos!.get(sid),
+            write: (list) => {
+              deps.todos!.set(sid, list);
+              store.append({
+                session_id: sid,
+                type: "todo.list_updated",
+                actor: "agent",
+                turn_id: turnId,
+                causation_id: proposedEvent.event_id,
+                payload: { todos: list },
+              });
+            },
+          },
           spawnSubagent: (task, parentCallId, agentName) =>
             runSubagent(
               task,
@@ -391,6 +589,19 @@ export async function runTurn(
               side_effects: { ...out.sideEffects, commit },
             },
           });
+          // P1-5：tool.execute.after 观测钩子（不阻塞）
+          if (hooksEnabled) {
+            appendHookRuns(
+              await runObserveHooks("tool.execute.after", session.cwd, {
+                session_id: sid,
+                tool: call.name,
+                args,
+                ok: true,
+                duration_ms: Date.now() - startedAt,
+                result_excerpt: result.slice(0, 500),
+              }),
+            );
+          }
         } catch (err) {
           store.append({
             session_id: sid,
@@ -404,6 +615,19 @@ export async function runTurn(
               duration_ms: Date.now() - startedAt,
             },
           });
+          // P1-5：执行失败同样触发 after 观测（ok=false）
+          if (hooksEnabled) {
+            appendHookRuns(
+              await runObserveHooks("tool.execute.after", session.cwd, {
+                session_id: sid,
+                tool: call.name,
+                args,
+                ok: false,
+                duration_ms: Date.now() - startedAt,
+                result_excerpt: (err instanceof Error ? err.message : String(err)).slice(0, 500),
+              }),
+            );
+          }
         }
       }
       // 工具结果已通过事件落库，下一轮迭代 rebuild 时自动折回上下文

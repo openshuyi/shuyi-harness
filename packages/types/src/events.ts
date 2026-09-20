@@ -27,11 +27,15 @@ export const SessionCreatedPayload = z.object({
   mode: SessionMode,
   model: z.string(),
   sandbox_level: SandboxLevel,
+  /** v0.3 / M2 新增：会话绑定的代理定义名（缺省为内置 build 代理） */
+  agent: z.string().optional(),
 });
 export const SessionConfigChangedPayload = z.object({
   mode: SessionMode.optional(),
   model: z.string().optional(),
   sandbox_level: SandboxLevel.optional(),
+  /** v0.3 / M2 新增：切换当前代理 */
+  agent: z.string().optional(),
 });
 export const SessionForkedPayload = z.object({
   from_session_id: z.string(),
@@ -70,7 +74,11 @@ export const ApprovalResolvedPayload = z.object({
   approval_id: z.string(),
   decision: z.enum(["approve", "deny"]),
   remember_rule: z.string().optional(),
+  /** M3：可选新增字段——记住的 glob 规则（事件模型只增不改，回放端可忽略） */
+  remember_pattern: z.string().optional(),
   deny_reason: z.string().optional(),
+  /** P0：question 工具的用户回答（事件模型只增不改） */
+  answer: z.string().optional(),
 });
 export const ToolCallStartedPayload = z.object({ call_id: z.string() });
 export const ToolCallOutputDeltaPayload = z.object({ call_id: z.string(), chunk: z.string() });
@@ -119,6 +127,17 @@ export const MemoryWrittenPayload = z.object({
   reason: z.string(),
 });
 
+// 任务清单（v0.3 / M1 新增）
+export const TodoItem = z.object({
+  content: z.string(),
+  status: z.enum(["pending", "in_progress", "completed"]),
+  priority: z.enum(["high", "medium", "low"]).optional(),
+});
+export type TodoItem = z.infer<typeof TodoItem>;
+export const TodoListUpdatedPayload = z.object({
+  todos: z.array(TodoItem),
+});
+
 // 子代理（v1.1 新增）
 export const SubagentStartedPayload = z.object({
   task: z.string(),
@@ -160,6 +179,17 @@ export const ErrorOccurredPayload = z.object({
   message: z.string(),
   retryable: z.boolean(),
 });
+/** P1-5：hook 执行审计（.agent/hooks/ 下可执行文件，shuyi.json hooks:true 开启） */
+export const HookExecutedPayload = z.object({
+  hook: z.string(),
+  point: z.enum(["tool.execute.before", "tool.execute.after", "event"]),
+  exit_code: z.number().int(),
+  duration_ms: z.number(),
+  timed_out: z.boolean(),
+  /** before hook 阻止工具执行时的原因（stderr） */
+  blocked_reason: z.string().optional(),
+  stderr_excerpt: z.string().optional(),
+});
 
 // ---------- 事件类型注册表 ----------
 export const EventPayloads = {
@@ -181,6 +211,7 @@ export const EventPayloads = {
   "context.request.assembled": ContextAssembledPayload,
   "context.compacted": ContextCompactedPayload,
   "memory.written": MemoryWrittenPayload,
+  "todo.list_updated": TodoListUpdatedPayload,
   "subagent.started": SubagentStartedPayload,
   "subagent.completed": SubagentCompletedPayload,
   "turn.started": TurnStartedPayload,
@@ -190,6 +221,7 @@ export const EventPayloads = {
   "session.status_changed": SessionStatusChangedPayload,
   "session.titled": SessionTitledPayload,
   "error.occurred": ErrorOccurredPayload,
+  "hook.executed": HookExecutedPayload,
 } as const;
 
 export type EventType = keyof typeof EventPayloads;
@@ -237,8 +269,20 @@ export const SessionRecord = z.object({
   archived: z.boolean(),
   forked_from: z.string().nullable(),
   caller_identity: z.string(),
+  /** v0.3 / M2 新增：会话绑定的代理定义名 */
+  agent: z.string().optional(),
   status: SessionStatus,
   last_seq: z.number().int(),
+  /** v0.3 / M5 新增（可选）：活跃调用数（挂起审批数），由服务端列表接口聚合 */
+  activeCallCount: z.number().int().optional(),
+  /** v1.3 / P1-6 新增（可选）：worktree 隔离会话的 git 信息（合并/放弃后清除） */
+  worktree: z
+    .object({
+      repo_root: z.string(),
+      worktree_path: z.string(),
+      branch: z.string(),
+    })
+    .optional(),
   /** v1.1 新增：累计 token 用量（由 turn.completed 聚合） */
   usage: z
     .object({

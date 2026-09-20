@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { SessionRecord } from "@shuyi/types";
+import type { AgentInfo, SessionRecord } from "@shuyi/types";
 import { useSessionStore } from "../core/store.js";
 import { fetchJson, fetchJsonArray } from "../core/api.js";
 
@@ -19,9 +19,28 @@ async function fetchSessions(): Promise<SessionRecord[]> {
 
 export function SessionList() {
   const queryClient = useQueryClient();
-  const { current, selectSession } = useSessionStore();
+  const { current, split, selectSession, openSplit, closeSplit, approvalAlerts, liveStatus } =
+    useSessionStore();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  /** M5：新会话的起始代理（内置 build 为缺省） */
+  const [newAgent, setNewAgent] = useState("build");
+  /** P1-6：新会话是否在独立 git worktree 中运行（并行写隔离） */
+  const [newWorktree, setNewWorktree] = useState(false);
+
+  // M5：新会话代理选项（cwd 取当前会话或缺省项目目录）
+  const { data: agents = [] } = useQuery<AgentInfo[]>({
+    queryKey: ["agents", current?.cwd],
+    queryFn: async () => {
+      try {
+        return await fetchJsonArray<AgentInfo>(
+          `/api/agents${current ? `?cwd=${encodeURIComponent(current.cwd)}` : ""}`,
+        );
+      } catch {
+        return [];
+      }
+    },
+  });
 
   const {
     data: sessions = [],
@@ -46,7 +65,13 @@ export function SessionList() {
       return fetchJson<SessionRecord>("/api/sessions", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cwd: "/mnt/agents/output" }),
+        body: JSON.stringify({
+          cwd: "/mnt/agents/output",
+          // M5：起始代理（build 为缺省，不传递以兼容旧服务端）
+          ...(newAgent && newAgent !== "build" ? { agent: newAgent } : {}),
+          // P1-6：worktree 隔离
+          ...(newWorktree ? { worktree: true } : {}),
+        }),
       });
     },
     onSuccess: (session) => {
@@ -81,7 +106,9 @@ export function SessionList() {
     <div className="sidebar">
       <div className="sidebar-header">
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h1>Agent</h1>
+          <h1>
+            <span className="brand-dot">◆</span>Shuyi Agent
+          </h1>
           <button
             className="theme-toggle"
             onClick={toggleTheme}
@@ -90,14 +117,38 @@ export function SessionList() {
             {theme === "dark" ? "☀" : "☾"}
           </button>
         </div>
-        <button
-          className="primary"
-          style={{ width: "100%", marginBottom: 8 }}
-          onClick={() => createMutation.mutate()}
-          disabled={createMutation.isPending}
-        >
-          + 新会话
-        </button>
+        <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+          <button
+            className="primary"
+            style={{ flex: 1 }}
+            onClick={() => createMutation.mutate()}
+            disabled={createMutation.isPending}
+          >
+            + 新会话
+          </button>
+          {/* M5：选择起始代理 */}
+          <select
+            value={newAgent}
+            onChange={(e) => setNewAgent(e.target.value)}
+            title="新会话的起始代理"
+            style={{ maxWidth: 110 }}
+          >
+            {[...new Set(["build", ...agents.map((a) => a.name)])].map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* P1-6：worktree 隔离开关 */}
+        <label className="worktree-toggle" title="在独立 git worktree 中运行会话：并行会话写文件互不干扰，完成后可合并回主分支">
+          <input
+            type="checkbox"
+            checked={newWorktree}
+            onChange={(e) => setNewWorktree(e.target.checked)}
+          />
+          ⎇ worktree 隔离
+        </label>
         <input
           className="search-box"
           placeholder="搜索历史消息…"
@@ -130,25 +181,83 @@ export function SessionList() {
           </>
         ) : (
           <>
-            {sessions.map((s) => (
-              <div
-                key={s.session_id}
-                className={`session-item ${current?.session_id === s.session_id ? "active" : ""}`}
-                onClick={() => selectSession(s)}
-              >
-                <div>
-                  <span className={`status-dot ${s.status}`} />
-                  {s.title}
-                </div>
-                <div className="meta">
-                  {s.mode} · {s.model}
-                  {s.usage && (s.usage.prompt_tokens > 0 || s.usage.completion_tokens > 0) && (
-                    <> · {(s.usage.prompt_tokens + s.usage.completion_tokens).toLocaleString()} tok</>
+            {sessions.map((s) => {
+              // M5：聚合流驱动的实时状态叠加（非可见会话），查询结果兜底
+              const status = liveStatus[s.session_id] ?? s.status;
+              const alerted = s.session_id in approvalAlerts;
+              const isSplit = split?.session_id === s.session_id;
+              return (
+                <div
+                  key={s.session_id}
+                  className={`session-item ${current?.session_id === s.session_id ? "active" : ""} ${alerted ? "alert-flash" : ""}`}
+                  onClick={() => selectSession(s)}
+                >
+                  <div>
+                    <span className={`status-dot ${status}`} />
+                    {s.title}
+                    {/* M5：分栏按钮（当前主栏会话不显示） */}
+                    {current?.session_id !== s.session_id && (
+                      <button
+                        className={`split-btn ${isSplit ? "on" : ""}`}
+                        title={isSplit ? "收起分栏" : "在右栏并行打开"}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (isSplit) closeSplit();
+                          else openSplit(s);
+                        }}
+                      >
+                        ⇄
+                      </button>
+                    )}
+                  </div>
+                  <div className="meta">
+                    {s.agent ?? "build"} · {s.mode} · {s.model}
+                    {(s.activeCallCount ?? 0) > 0 && <> · ⏸{s.activeCallCount}</>}
+                    {s.usage && (s.usage.prompt_tokens > 0 || s.usage.completion_tokens > 0) && (
+                      <> · {(s.usage.prompt_tokens + s.usage.completion_tokens).toLocaleString()} tok</>
+                    )}
+                    {s.usage?.cost_usd != null && <> · ${s.usage.cost_usd.toFixed(4)}</>}
+                  </div>
+                  {/* P1-6：worktree 徽标 + 合并/放弃（空闲时） */}
+                  {s.worktree && (
+                    <div className="worktree-row" onClick={(e) => e.stopPropagation()}>
+                      <span className="worktree-badge" title={s.worktree.worktree_path}>
+                        ⎇ {s.worktree.branch}
+                      </span>
+                      {status === "idle" && (
+                        <>
+                          <button
+                            className="worktree-action"
+                            title="把 worktree 分支合并回主分支并清理"
+                            onClick={async () => {
+                              const r = await fetchJson<{ ok: boolean; error?: string }>(
+                                `/api/sessions/${s.session_id}/worktree/merge`,
+                                { method: "POST" },
+                              ).catch((e) => ({ ok: false, error: String(e) }));
+                              if (!r.ok) alert(`合并失败：${r.error ?? "未知错误"}`);
+                              void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+                            }}
+                          >
+                            ⇪ 合并
+                          </button>
+                          <button
+                            className="worktree-action danger-text"
+                            title="放弃 worktree（未合并改动将丢失）"
+                            onClick={async () => {
+                              if (!confirm("放弃此 worktree？未合并的改动将丢失。")) return;
+                              await fetch(`/api/sessions/${s.session_id}/worktree/discard`, { method: "POST" });
+                              void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+                            }}
+                          >
+                            × 放弃
+                          </button>
+                        </>
+                      )}
+                    </div>
                   )}
-                  {s.usage?.cost_usd != null && <> · ${s.usage.cost_usd.toFixed(4)}</>}
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {sessions.length === 0 && (
               <div style={{ padding: 12, fontSize: 12, color: "var(--text-dim)" }}>
                 暂无会话，点击上方按钮创建

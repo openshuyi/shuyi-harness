@@ -19,3 +19,7 @@ mcp.json
 *.log
 .cache
 .turbo
+
+# 预览管线根入口（apps/web/dist 的拷贝，构建产物）
+/index.html
+/assets

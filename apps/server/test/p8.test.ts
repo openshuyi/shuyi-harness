@@ -88,7 +88,7 @@ describe("P8-3：Agent 定义系统", () => {
     expect(parseAgentMarkdown("---\ndescription: 缺 name\n---\n正文", "user")).toBeNull();
   });
 
-  test("三层合并：项目覆盖全局覆盖内置", () => {
+  test("三层合并：项目覆盖全局；内置不可覆盖（M2 规则）", () => {
     const home = path.join(tmp, "home-agents");
     const cwd = path.join(tmp, "proj-agents");
     fs.mkdirSync(path.join(home, ".agent", "agents"), { recursive: true });
@@ -98,19 +98,27 @@ describe("P8-3：Agent 定义系统", () => {
       "---\nname: reviewer\ndescription: 评审\n---\n全局评审代理",
     );
     fs.writeFileSync(
+      path.join(cwd, ".agent", "agents", "reviewer.md"),
+      "---\nname: reviewer\n---\n项目定制评审代理",
+    );
+    // M2 规则变化：与内置同名的 project/user 定义被忽略（内置永远存在，提示改名）
+    fs.writeFileSync(
       path.join(cwd, ".agent", "agents", "explore.md"),
       "---\nname: explore\n---\n项目定制的探索代理",
     );
 
     const reg = new AgentRegistry(home);
-    expect(reg.get("reviewer", cwd)).toMatchObject({ source: "user", system: "全局评审代理" });
-    // 项目同名覆盖内置 explore
-    expect(reg.get("explore", cwd)).toMatchObject({ source: "project", system: "项目定制的探索代理" });
-    // 不传 cwd 时回退内置
-    expect(reg.get("explore")!.source).toBe("builtin");
-    // 内置 title / summary 始终存在
+    // 非内置名：项目覆盖全局
+    expect(reg.get("reviewer", cwd)).toMatchObject({ source: "project", system: "项目定制评审代理" });
+    // 不传 cwd 时用全局定义
+    expect(reg.get("reviewer")).toMatchObject({ source: "user", system: "全局评审代理" });
+    // 项目同名内置 explore → 忽略项目文件，保留内置
+    expect(reg.get("explore", cwd)!.source).toBe("builtin");
+    // 内置 title / summary / build / plan 始终存在
     expect(reg.get("title")).toBeDefined();
     expect(reg.get("summary")).toBeDefined();
+    expect(reg.get("build")!.modeDefault).toBe("build");
+    expect(reg.get("plan")!.modeDefault).toBe("plan");
   });
 
   test("子代理使用自定义代理定义：系统提示与工具面生效", async () => {

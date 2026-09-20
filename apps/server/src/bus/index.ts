@@ -10,9 +10,20 @@ export type EventListener = (event: AgentEvent) => void;
 export class EventBus {
   private listeners = new Set<EventListener>();
 
-  subscribe(listener: EventListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+  /**
+   * 订阅事件；M5：可选 sessionId 过滤（聚合 SSE 流按会话分派的基础）。
+   * 传 Set<string> 可订阅多个会话。
+   */
+  subscribe(listener: EventListener, sessionId?: string | Set<string>): () => void {
+    const wrapped: EventListener = sessionId
+      ? (e) => {
+          if (typeof sessionId === "string" ? e.session_id === sessionId : sessionId.has(e.session_id)) {
+            listener(e);
+          }
+        }
+      : listener;
+    this.listeners.add(wrapped);
+    return () => this.listeners.delete(wrapped);
   }
 
   publish(event: AgentEvent): void {

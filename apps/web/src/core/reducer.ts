@@ -3,7 +3,7 @@
  * 与服务端上下文重建同构，但面向渲染。
  * 对应文档：《事件模型设计》§7 前端 Reducer 契约
  */
-import type { AgentEvent, SessionStatus } from "@shuyi/types";
+import type { AgentEvent, SessionStatus, TodoItem } from "@shuyi/types";
 
 export type TimelineItem =
   | { kind: "user"; key: string; text: string }
@@ -45,6 +45,8 @@ export interface TrajectoryState {
   usage: { prompt: number; completion: number };
   /** 各轮次的 git 基线（turn.started.base_commit），用于回滚按钮 */
   baselines: TurnBaseline[];
+  /** M1：会话任务清单（todo.list_updated 事件的最新快照） */
+  todos: TodoItem[];
 }
 
 export const initialTrajectory: TrajectoryState = {
@@ -54,6 +56,7 @@ export const initialTrajectory: TrajectoryState = {
   lastSeq: -1,
   usage: { prompt: 0, completion: 0 },
   baselines: [],
+  todos: [],
 };
 
 export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectoryState {
@@ -249,6 +252,9 @@ export function reduceEvent(state: TrajectoryState, e: AgentEvent): TrajectorySt
 
     case "session.status_changed":
       return { ...s, status: p.status as SessionStatus };
+
+    case "todo.list_updated":
+      return { ...s, todos: (p.todos as TodoItem[]) ?? [] };
 
     case "session.titled":
       return { ...s, items: [...s.items, { kind: "marker", key: e.event_id, text: `会话已命名为：${p.title}`, tone: "info" }] };

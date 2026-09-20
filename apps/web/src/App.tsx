@@ -4,12 +4,13 @@ import { SessionList } from "./components/SessionList.js";
 import { Trajectory } from "./components/Trajectory.js";
 import { Composer } from "./components/Composer.js";
 import { ApprovalDialog } from "./components/ApprovalDialog.js";
+import { TodoPanel } from "./components/TodoPanel.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
-import { useSessionStore } from "./core/store.js";
+import { useSessionStore, type PaneSlot } from "./core/store.js";
 
 export default function App() {
   const queryClient = useQueryClient();
-  const { trajectory } = useSessionStore();
+  const { trajectory, current, split, closeSplit } = useSessionStore();
 
   // 轮次结束时让会话列表快照失效（刷新「最后活跃」状态）
   useEffect(() => {
@@ -33,15 +34,45 @@ export default function App() {
       <ErrorBoundary name="会话列表">
         <SessionList />
       </ErrorBoundary>
-      <div className="main">
-        <ErrorBoundary name="对话区">
-          <Trajectory />
-        </ErrorBoundary>
-        <ErrorBoundary name="输入区">
-          <Composer />
-        </ErrorBoundary>
+      {/* M5：分栏模式——主栏 + 可选右栏，各自独立 Trajectory/Composer/审批弹窗 */}
+      <div className={`main ${split ? "split" : ""}`}>
+        <Pane slot="primary" title={current?.title} />
+        {split && <Pane slot="secondary" title={split.title} onClose={closeSplit} />}
       </div>
-      <ApprovalDialog />
+    </div>
+  );
+}
+
+/** M5：单个会话栏（主/右栏复用） */
+function Pane({
+  slot,
+  title,
+  onClose,
+}: {
+  slot: PaneSlot;
+  title?: string;
+  onClose?: () => void;
+}) {
+  return (
+    <div className="pane">
+      {onClose ? (
+        <div className="pane-header">
+          <span className="pane-title">{title ?? "分栏会话"}</span>
+          <button className="pane-close" onClick={onClose} title="收起分栏">
+            ×
+          </button>
+        </div>
+      ) : null}
+      <ErrorBoundary name="任务面板">
+        <TodoPanel slot={slot} />
+      </ErrorBoundary>
+      <ErrorBoundary name="对话区">
+        <Trajectory slot={slot} />
+      </ErrorBoundary>
+      <ErrorBoundary name="输入区">
+        <Composer slot={slot} />
+      </ErrorBoundary>
+      <ApprovalDialog slot={slot} />
     </div>
   );
 }
