@@ -76,9 +76,11 @@ export class LspClient {
 
   private async start(): Promise<boolean> {
     const [cmd, ...args] = this.serverCmd;
-    this.proc = spawn(cmd, args, { cwd: this.cwd, stdio: ["pipe", "pipe", "pipe"] });
-    this.proc.stdout!.on("data", (chunk: Buffer) => this.onData(chunk));
-    this.proc.on("exit", () => {
+    if (!cmd) return false;
+    const proc = spawn(cmd, args, { cwd: this.cwd, stdio: ["pipe", "pipe", "pipe"] });
+    this.proc = proc;
+    proc.stdout?.on("data", (chunk: Buffer) => this.onData(chunk));
+    proc.on("exit", () => {
       this.ready = null;
       this.proc = null;
       for (const p of this.pending.values()) p.reject(new Error("语言服务器退出"));

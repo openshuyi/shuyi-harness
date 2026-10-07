@@ -7,7 +7,6 @@
  *   3. 写 context.compacted 事件（covers_until_seq 为重建边界）
  * 阈值：token 估算 > 窗口 * 0.75（留空间给压缩提示本身）。
  */
-import type { AgentEvent } from "@shuyi-harness/types";
 import type { ChatMessage, ModelAdapter } from "../model/types.js";
 import type { EventStore } from "../store/event-store.js";
 import { estimateTokens } from "./index.js";
@@ -69,7 +68,7 @@ export function deterministicCleanup(messages: ChatMessage[]): ChatMessage[] {
 
 function extractReadPath(content: string): string | null {
   const m = content.match(/^\[(.+?) 共 \d+ 行/);
-  return m ? m[1] : null;
+  return m?.[1] ?? null;
 }
 
 /** 把消息序列转成压缩提示用的纯文本 */

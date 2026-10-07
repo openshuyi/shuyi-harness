@@ -106,7 +106,7 @@ describe("P0 端到端", () => {
     manager.postMessage(session.session_id, "!bash echo approval-works");
 
     // 等待审批挂起
-    const req = await waitFor("approval.requested");
+    const req = await waitFor("approval.requested", mark);
     const { approval_id } = req.payload as { approval_id: string };
     expect(manager.getSession(session.session_id)!.status).toBe("awaiting_approval");
 
@@ -199,7 +199,7 @@ describe("P0 端到端", () => {
   test("seq 单调无空洞", () => {
     const all = store.readSince(session.session_id, -1);
     for (let i = 0; i < all.length; i++) {
-      expect(all[i].seq).toBe(i);
+      expect(all[i]!.seq).toBe(i);
     }
   });
 });

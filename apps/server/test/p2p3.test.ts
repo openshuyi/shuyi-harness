@@ -18,7 +18,7 @@ import { SqliteEventStore } from "../src/agent/store/event-store.js";
 import { createDefaultRegistry } from "../src/agent/tools/index.js";
 import { MockAdapter } from "../src/agent/model/mock.js";
 import { SessionManager } from "../src/agent/session/manager.js";
-import { rebuildContext, readMemory } from "../src/agent/context/index.js";
+import { readMemory } from "../src/agent/context/index.js";
 import { deterministicCleanup, parseSummary } from "../src/agent/context/compaction.js";
 import { PermissionService } from "../src/agent/permission/index.js";
 
@@ -135,9 +135,9 @@ describe("P2：压缩组件", () => {
       { role: "tool" as const, content: "x".repeat(5000), tool_call_id: "3" },
     ];
     const cleaned = deterministicCleanup(msgs);
-    expect(cleaned[1].content).toContain("已被后续读取取代");
-    expect(cleaned[2].content).toContain("新内容");
-    expect(cleaned[3].content.length).toBeLessThan(2100);
+    expect(cleaned[1]!.content).toContain("已被后续读取取代");
+    expect(cleaned[2]!.content).toContain("新内容");
+    expect(cleaned[3]!.content.length).toBeLessThan(2100);
   });
 
   test("parseSummary：模板解析与兜底", () => {
@@ -180,8 +180,8 @@ describe("P4：搜索与用量", () => {
 
     const hits = store.search("unique-keyword-xyz");
     expect(hits.length).toBeGreaterThan(0);
-    expect(hits[0].session_id).toBe(s.session_id);
-    expect(hits[0].snippet).toContain("unique-keyword-xyz");
+    expect(hits[0]!.session_id).toBe(s.session_id);
+    expect(hits[0]!.snippet).toContain("unique-keyword-xyz");
   });
 
   test("会话用量聚合", async () => {

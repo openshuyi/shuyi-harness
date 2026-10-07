@@ -71,8 +71,8 @@ describe("P2：压缩触发与重建", () => {
       createDefaultRegistry().toModelSpecs(),
     );
     expect(wasCompacted).toBe(true);
-    expect(messages[0].content).toContain("压缩摘要");
-    expect(messages[0].content).toContain("Session Intent");
+    expect(messages[0]!.content).toContain("压缩摘要");
+    expect(messages[0]!.content).toContain("Session Intent");
 
     // 轮次正常完成（压缩不破坏流程）
     expect(events.some((e) => e.type === "turn.completed")).toBe(true);

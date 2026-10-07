@@ -230,8 +230,10 @@ const grepTool: ToolDefinition = {
         const content = fs.readFileSync(path.join(base, f), "utf-8");
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
-          if (re.test(lines[i])) {
-            hits.push(`${f}:${i + 1}:${lines[i].slice(0, 200)}`);
+          const line = lines[i];
+          if (line === undefined) continue;
+          if (re.test(line)) {
+            hits.push(`${f}:${i + 1}:${line.slice(0, 200)}`);
             if (hits.length >= max) break;
           }
         }
@@ -271,7 +273,7 @@ const memoryWriteTool: ToolDefinition = {
     entry: z.string().describe("要记住的事实，一两句话"),
     reason: z.string().describe("为什么值得记住"),
   }),
-  involvedPaths: (args) => [".agent/memory.md"],
+  involvedPaths: () => [".agent/memory.md"],
   async execute(args, ctx) {
     const memPath = path.join(ctx.cwd, ".agent", "memory.md");
     fs.mkdirSync(path.dirname(memPath), { recursive: true });

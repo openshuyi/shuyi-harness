@@ -184,7 +184,7 @@ function patchUnpairedToolCalls(messages: ChatMessage[]): void {
   );
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    if (m.role !== "assistant" || !m.tool_calls?.length) continue;
+    if (!m || m.role !== "assistant" || !m.tool_calls?.length) continue;
     const missing = m.tool_calls.filter((tc) => !answered.has(tc.id));
     if (missing.length === 0) continue;
     const synthetic = missing.map((tc) => ({
