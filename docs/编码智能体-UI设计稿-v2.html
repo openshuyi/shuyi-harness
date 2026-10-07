@@ -1,0 +1,1598 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>墨仪 · shuyi-harness 设计语言 v2 — Ink Instrument</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   QUIET INSTRUMENT · 静谧仪器
+   shuyi-harness 设计语言 v1 — 本页由提案 token 渲染，零硬编码色值
+   ============================================================ */
+
+/* ---------- 01 TOKENS · 墨仪 v2 ----------
+   深 = 墨（焦浓重淡清五色）· 浅 = 纸（宣纸帘纹）
+   语义 = 颜料：朱砂·茜红·藤黄·石绿·群青 —— 色彩即信号，盖印即仪式 */
+:root {
+  --font-sans: "Inter", -apple-system, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", "STSong", serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, "Cascadia Code", monospace;
+
+  /* 墨五色 · ink tones (焦→清) */
+  --bg-0: #0f0e0d;   /* 焦墨 · 画布 */
+  --bg-1: #151413;   /* 浓墨 · 一级面板 */
+  --bg-2: #1c1b19;   /* 重墨 · 卡片 */
+  --bg-3: #242320;   /* 淡墨 · 浮层 */
+  --bg-inset: #0a0908; /* 沉墨 · 凹陷读数区 */
+
+  /* text (暖白 · 拓片) */
+  --text-1: #edebe6;
+  --text-2: #9d9a94;
+  --text-3: #63615c;
+
+  /* line (暖调发丝) */
+  --line-1: rgba(255,246,235,.055);
+  --line-2: rgba(255,246,235,.10);
+  --line-3: rgba(255,246,235,.165);
+
+  /* 朱砂 · 交互与进行中（印泥色） */
+  --accent: #d64730;
+  --accent-hover: #e4654e;
+  --accent-active: #bf3b25;
+  --accent-soft: rgba(214,71,48,.14);
+  --accent-ring: rgba(214,71,48,.45);
+  --on-accent: #ffffff;
+  --brand-gradient: linear-gradient(135deg, #d64730, #d64730); /* v2：渐变退役，仪式归印章 */
+
+  /* 语义 = 传统颜料 */
+  --success: #35b98a;      --success-soft: rgba(53,185,138,.12);   /* 石绿 */
+  --danger:  #ef5f7d;      --danger-soft:  rgba(239,95,125,.12);   /* 茜红 */
+  --warn:    #f0b34e;      --warn-soft:    rgba(240,179,78,.12);   /* 藤黄 */
+  --info:    #7d84ea;      --info-soft:    rgba(125,132,234,.12);  /* 群青（v1 靛蓝降为信息色） */
+
+  /* shape */
+  --r-xs: 6px; --r-sm: 8px; --r-md: 10px; --r-lg: 12px; --r-full: 999px;
+
+  /* shadow — 浮层专用 */
+  --shadow-1: 0 1px 2px rgba(26,22,16,.06);
+  --shadow-2: 0 4px 16px rgba(26,22,16,.08);
+  --shadow-3: 0 16px 48px rgba(26,22,16,.16);
+  --shadow-pop: 0 16px 48px rgba(0,0,0,.6);
+
+  /* motion */
+  --dur-fast: 140ms; --dur-base: 200ms; --dur-slow: 280ms;
+  --ease: cubic-bezier(.25,.46,.45,.94);
+  --ease-pop: cubic-bezier(.34,1.3,.64,1);
+}
+[data-theme="light"] {
+  /* 纸 · xuan paper */
+  --bg-0: #f3f0e9; --bg-1: #f7f5ee; --bg-2: #fcfbf7; --bg-3: #fcfbf7; --bg-inset: #edeadf;
+  --text-1: #211f1c; --text-2: #5a5750; --text-3: #98948c;
+  --line-1: rgba(32,28,20,.07); --line-2: rgba(32,28,20,.12); --line-3: rgba(32,28,20,.19);
+  --accent: #b23415; --accent-hover: #9c2d11; --accent-active: #c64425;
+  --accent-soft: rgba(178,52,21,.10); --accent-ring: rgba(178,52,21,.40);
+  --brand-gradient: linear-gradient(135deg, #b23415, #b23415);
+  --success: #0f8f66; --success-soft: rgba(15,143,102,.10);
+  --danger:  #c73a5c; --danger-soft:  rgba(199,58,92,.10);
+  --warn:    #a8741c; --warn-soft:    rgba(168,116,28,.12);
+  --info:    #4b4fc4; --info-soft:    rgba(75,79,196,.10);
+}
+
+/* ---------- 02 base ---------- */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px; line-height: 1.6;
+  background: var(--bg-0); color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
+  transition: background var(--dur-base) var(--ease), color var(--dur-base) var(--ease);
+}
+::selection { background: var(--accent-soft); }
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--accent-hover); }
+code, kbd, pre { font-family: var(--font-mono); }
+
+/* mono label — 仪器读数标签 */
+.lbl {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--text-3);
+}
+
+/* ---------- 03 page scaffold ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 90;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 28px; height: 56px;
+  background: color-mix(in srgb, var(--bg-0) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(1.5);
+  border-bottom: 1px solid var(--line-1);
+}
+.logo {
+  width: 26px; height: 26px; border-radius: var(--r-xs);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); /* 刻边 · carved seal edge */
+  display: grid; place-items: center;
+  font-family: var(--font-serif); font-size: 14px; font-weight: 700; color: var(--on-accent);
+}
+.topbar h1 { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
+.topbar .sub { color: var(--text-3); font-size: 12px; }
+.topbar .spacer { flex: 1; }
+
+.wrap { max-width: 1080px; margin: 0 auto; padding: 40px 28px 120px; }
+section { margin-bottom: 72px; }
+.sec-h { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+.sec-h .no { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent); letter-spacing: .06em; }
+.sec-h h2 { font-family: var(--font-serif); font-size: 21px; font-weight: 600; letter-spacing: .01em; }
+.sec-d { color: var(--text-2); font-size: 13px; margin-bottom: 24px; max-width: 640px; }
+.grid { display: grid; gap: 12px; }
+.g2 { grid-template-columns: repeat(2, 1fr); }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.g4 { grid-template-columns: repeat(4, 1fr); }
+.g6 { grid-template-columns: repeat(6, 1fr); }
+
+/* spec annotation — 组件旁的 token 标注 */
+.spec {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3);
+  letter-spacing: .02em; margin-top: 8px; line-height: 1.7;
+}
+
+/* ---------- 04 buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-family: var(--font-sans); font-weight: 500; white-space: nowrap;
+  border-radius: var(--r-sm); border: 1px solid transparent;
+  cursor: pointer; user-select: none;
+  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease),
+              color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+}
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+.sm { height: 30px; padding: 0 12px; font-size: 12.5px; }
+.md { height: 36px; padding: 0 14px; font-size: 13.5px; }
+.lg { height: 42px; padding: 0 18px; font-size: 14.5px; }
+.b-primary { background: var(--accent); color: var(--on-accent); }
+.b-primary:hover { background: var(--accent-hover); }
+.b-primary:active { background: var(--accent-active); }
+.b-secondary { background: var(--bg-2); border-color: var(--line-2); color: var(--text-1); }
+.b-secondary:hover { background: var(--bg-3); border-color: var(--line-3); }
+.b-ghost { background: transparent; color: var(--text-2); }
+.b-ghost:hover { background: var(--accent-soft); color: var(--text-1); }
+.b-destructive { background: var(--danger); color: #fff; }
+.b-destructive:hover { filter: brightness(1.08); }
+.b-danger-soft { background: var(--danger-soft); color: var(--danger); }
+.b-danger-soft:hover { filter: brightness(1.1); }
+.btn[disabled] { opacity: .45; pointer-events: none; }
+.btn .spin {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, currentColor 35%, transparent);
+  border-top-color: currentColor; animation: rot .7s linear infinite;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+.icon-btn {
+  width: 30px; height: 30px; border-radius: var(--r-sm); border: none; cursor: pointer;
+  background: transparent; color: var(--text-3);
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.icon-btn:hover { background: var(--accent-soft); color: var(--text-1); }
+
+.kbd {
+  font-size: 11px; padding: 2px 6px; border-radius: var(--r-xs);
+  background: var(--bg-inset); border: 1px solid var(--line-2);
+  border-bottom-width: 2px; color: var(--text-2);
+}
+
+/* ---------- 05 badges & status ---------- */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: .05em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: var(--r-xs);
+  border: 1px solid var(--line-2); color: var(--text-2); background: var(--bg-2);
+}
+.dot { width: 8px; height: 8px; border-radius: var(--r-full); flex: none; }
+.d-accent { background: var(--accent); }
+.d-success { background: var(--success); }
+.d-danger { background: var(--danger); }
+.d-warn { background: var(--warn); }
+.d-idle { background: var(--text-3); }
+.pulse { animation: pulse 1.6s var(--ease) infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.8); } }
+.bd-accent { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); background: var(--accent-soft); }
+.bd-success { color: var(--success); border-color: color-mix(in srgb, var(--success) 35%, transparent); background: var(--success-soft); }
+.bd-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 35%, transparent); background: var(--danger-soft); }
+.bd-warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); background: var(--warn-soft); }
+.bd-info { color: var(--info); border-color: color-mix(in srgb, var(--info) 35%, transparent); background: var(--info-soft); }
+
+/* ---------- 06 swatches ---------- */
+.sw { border: 1px solid var(--line-2); border-radius: var(--r-sm); overflow: hidden; background: var(--bg-2); }
+.sw .chip { height: 52px; }
+.sw .meta { padding: 8px 10px; border-top: 1px solid var(--line-1); }
+.sw .meta .n { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-2); letter-spacing: .03em; }
+.sw .meta .v { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+
+/* ---------- 07 surfaces demo ---------- */
+.surf { border-radius: var(--r-md); padding: 18px; border: 1px solid var(--line-2); }
+.surf .tag { margin-bottom: 12px; display: block; }
+
+/* ---------- 08 tool cards ---------- */
+.tc { border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--bg-2); overflow: hidden; }
+.tc-h {
+  display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px;
+  cursor: pointer; user-select: none;
+  transition: background var(--dur-fast) var(--ease);
+}
+.tc-h:hover { background: var(--bg-3); }
+.tc-h .tool { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: .05em; color: var(--accent); }
+.tc-h .target { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.tc-h .t { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.tc-h .chev { color: var(--text-3); font-size: 10px; transition: transform var(--dur-base) var(--ease); }
+.tc.open .chev { transform: rotate(90deg); }
+.tc-b { display: none; border-top: 1px solid var(--line-1); background: var(--bg-inset); }
+.tc.open .tc-b { display: block; animation: rise var(--dur-base) var(--ease); }
+@keyframes rise { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+.tc-b pre { padding: 12px 14px; font-size: 12.5px; line-height: 1.65; color: var(--text-2); overflow-x: auto; }
+.tc-b pre .k { color: var(--info); }
+.tc-b pre .s { color: var(--success); }
+.tc-b pre .cm { color: var(--text-3); }
+.tc-b .result { padding: 8px 14px 10px; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); border-top: 1px solid var(--line-1); }
+.tc-b .result b { color: var(--success); font-weight: 500; }
+.tc-h.stat-fail .tool { color: var(--danger); }
+.tc-h.stat-wait .tool { color: var(--warn); }
+
+/* ---------- 09 diff ---------- */
+.diff { border: 1px solid var(--line-2); border-radius: var(--r-sm); overflow: hidden; }
+.diff-f { display: flex; align-items: center; gap: 10px; padding: 9px 12px; background: var(--bg-2); border-bottom: 1px solid var(--line-1); }
+.diff-f .path { font-family: var(--font-mono); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diff-f .path b { color: var(--text-1); font-weight: 500; }
+.add, .del { font-family: var(--font-mono); font-size: 11px; font-weight: 600; }
+.add { color: var(--success); } .del { color: var(--danger); }
+.diff-l { display: flex; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; }
+.diff-l .ln { width: 40px; text-align: right; padding-right: 10px; color: var(--text-3); flex: none; user-select: none; }
+.diff-l .code { padding-right: 14px; white-space: pre; color: var(--text-2); }
+.l-add { background: var(--success-soft); box-shadow: inset 2px 0 0 var(--success); }
+.l-add .code { color: var(--text-1); }
+.l-del { background: var(--danger-soft); box-shadow: inset 2px 0 0 var(--danger); }
+.l-del .code { color: var(--text-2); }
+
+/* ---------- 10 messages ---------- */
+.msg-user { display: flex; justify-content: flex-end; margin: 14px 0; }
+.msg-user .bubble {
+  max-width: 72%; background: var(--accent-soft); color: var(--text-1);
+  border-radius: var(--r-md); padding: 10px 14px; font-size: 13.5px; line-height: 1.6;
+}
+.msg-a { margin: 14px 0; font-size: 13.5px; line-height: 1.65; color: var(--text-1); }
+.msg-a h4 { font-size: 14.5px; margin: 14px 0 6px; letter-spacing: -.01em; }
+.msg-a ul { padding-left: 20px; color: var(--text-2); margin: 6px 0; }
+.msg-a li { margin: 3px 0; }
+.msg-a .inline-code { font-family: var(--font-mono); font-size: 12px; background: var(--bg-inset); border: 1px solid var(--line-1); border-radius: var(--r-xs); padding: 1px 5px; color: var(--info); }
+.codeblock { border: 1px solid var(--line-2); border-radius: var(--r-sm); overflow: hidden; margin: 10px 0; }
+.codeblock .ch { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; background: var(--bg-2); border-bottom: 1px solid var(--line-1); }
+.codeblock pre { padding: 12px 14px; background: var(--bg-inset); font-size: 12.5px; line-height: 1.65; color: var(--text-2); overflow-x: auto; }
+.msg-acts { display: flex; gap: 2px; opacity: 0; transition: opacity var(--dur-fast) var(--ease); margin-top: 4px; }
+.msg-a:hover .msg-acts { opacity: 1; }
+
+/* ---------- 11 plan card ---------- */
+.plan { border: 1px solid var(--line-2); border-top: 2px solid var(--accent); border-radius: var(--r-md); background: var(--bg-2); overflow: hidden; }
+.plan-h { display: flex; align-items: center; gap: 10px; padding: 14px 16px 0; }
+.plan-h h3 { font-size: 15px; font-weight: 600; flex: 1; }
+.plan ul.tasks { list-style: none; padding: 10px 16px; }
+.plan ul.tasks li { display: flex; gap: 10px; align-items: flex-start; padding: 6px 0; font-size: 13px; color: var(--text-2); }
+.plan ul.tasks li.done { color: var(--text-3); text-decoration: line-through; }
+.plan ul.tasks .cbx { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--line-3); flex: none; margin-top: 3px; display: grid; place-items: center; font-size: 10px; }
+.plan ul.tasks li.done .cbx { background: var(--success); border-color: var(--success); color: #06251a; }
+.plan-f { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line-1); background: var(--bg-1); }
+
+/* ---------- 12 approval ---------- */
+.appr { border: 1px solid var(--line-3); border-radius: var(--r-lg); background: var(--bg-3); box-shadow: var(--shadow-pop); max-width: 560px; overflow: hidden; }
+.appr-h { display: flex; align-items: center; gap: 12px; padding: 18px 20px 0; }
+.appr-h h3 { font-size: 16px; font-weight: 600; flex: 1; }
+.appr-cmd { margin: 14px 20px; background: var(--bg-inset); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 12px 14px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.7; color: var(--text-2); max-height: 150px; overflow: auto; }
+.appr-cmd .p { color: var(--warn); }
+.appr-rule { margin: 0 20px 4px; font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.appr-f { display: flex; gap: 8px; padding: 14px 20px; }
+
+/* ---------- 13 composer ---------- */
+.composer { border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--bg-2); overflow: hidden; transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.composer:focus-within { border-color: var(--line-3); box-shadow: 0 0 0 3px var(--accent-ring); }
+.composer textarea {
+  width: 100%; border: none; outline: none; resize: none; background: transparent;
+  color: var(--text-1); font-family: var(--font-sans); font-size: 13.5px; line-height: 1.6;
+  padding: 12px 14px 6px; min-height: 66px;
+}
+.composer textarea::placeholder { color: var(--text-3); }
+.composer .chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 14px; }
+.chip-q { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11px; color: var(--text-2); background: var(--bg-inset); border: 1px solid var(--line-2); border-radius: var(--r-full); padding: 3px 6px 3px 10px; }
+.chip-q button { border: none; background: none; color: var(--text-3); cursor: pointer; font-size: 12px; padding: 0 2px; }
+.chip-q button:hover { color: var(--danger); }
+.chip-ref { color: var(--info); }
+.comp-f { display: flex; align-items: center; gap: 8px; padding: 8px 12px; }
+.seg { display: inline-flex; background: var(--bg-inset); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 2px; }
+.seg button {
+  border: none; background: transparent; cursor: pointer; border-radius: var(--r-xs);
+  font-family: var(--font-sans); font-size: 12px; font-weight: 500; color: var(--text-3);
+  padding: 4px 12px; transition: all var(--dur-fast) var(--ease);
+}
+.seg button.on { background: var(--accent-soft); color: var(--accent); }
+.seg button:not(.on):hover { color: var(--text-1); }
+.model-pick { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2); background: transparent; border: 1px solid transparent; border-radius: var(--r-sm); padding: 5px 8px; cursor: pointer; }
+.model-pick:hover { border-color: var(--line-2); background: var(--bg-inset); }
+.send { width: 34px; height: 34px; border-radius: var(--r-sm); border: none; background: var(--accent); color: var(--on-accent); cursor: pointer; display: grid; place-items: center; transition: background var(--dur-fast) var(--ease); }
+.send:hover { background: var(--accent-hover); }
+.send.stop { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+.usage { display: flex; align-items: center; gap: 14px; padding: 7px 14px; border-top: 1px solid var(--line-1); background: var(--bg-1); font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.usage .bar { flex: 1; height: 3px; border-radius: var(--r-full); background: var(--line-2); overflow: hidden; max-width: 180px; }
+.usage .bar i { display: block; height: 100%; background: var(--accent); border-radius: var(--r-full); }
+.usage.hot { color: var(--warn); }
+.usage.hot .bar i { background: var(--warn); }
+.usage.hot .u-ctx { color: var(--warn); }
+
+/* ---------- 14 session list ---------- */
+.slist { border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--bg-1); padding: 8px; }
+.slist .search { display: flex; align-items: center; gap: 8px; background: var(--bg-inset); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 6px 10px; margin-bottom: 6px; color: var(--text-3); }
+.slist .search input { flex: 1; border: none; outline: none; background: none; color: var(--text-1); font-size: 12.5px; font-family: var(--font-sans); }
+.sgroup { padding: 10px 6px 4px; display: flex; align-items: center; justify-content: space-between; }
+.sitem { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: var(--r-sm); cursor: pointer; position: relative; transition: background var(--dur-fast) var(--ease); }
+.sitem:hover { background: var(--bg-2); }
+.sitem.sel { background: var(--accent-soft); }
+.sitem.pin::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: var(--r-full); background: var(--accent); }
+.sitem .st { margin-top: 5px; flex: none; }
+.sitem .body { flex: 1; min-width: 0; }
+.sitem .ttl { font-size: 13px; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sitem.sel .ttl { color: var(--accent); }
+.sitem .meta { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+
+/* ---------- 15 command palette ---------- */
+.cpal { border: 1px solid var(--line-3); border-radius: var(--r-lg); background: var(--bg-3); box-shadow: var(--shadow-pop); overflow: hidden; max-width: 480px; }
+.cpal .in { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line-1); }
+.cpal .in input { flex: 1; border: none; outline: none; background: none; color: var(--text-1); font-size: 14px; font-family: var(--font-sans); }
+.cpal .grp { padding: 8px 8px 4px; }
+.cpal .item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-sm); font-size: 13px; color: var(--text-2); cursor: pointer; }
+.cpal .item:hover, .cpal .item.cur { background: var(--accent-soft); color: var(--text-1); }
+.cpal .item .ic { width: 16px; text-align: center; color: var(--text-3); font-size: 13px; }
+.cpal .item .kb { margin-left: auto; }
+
+/* ---------- 16 feedback ---------- */
+.toast { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-2); border-left: 2px solid var(--success); background: var(--bg-2); border-radius: var(--r-sm); padding: 10px 14px; font-size: 13px; box-shadow: var(--shadow-2); }
+.toast.err { border-left-color: var(--danger); }
+.toast .t-lbl { color: var(--text-1); }
+.tooltip-demo { position: relative; display: inline-block; }
+.tt { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--line-2); border-radius: var(--r-xs); padding: 5px 9px; font-size: 11.5px; color: var(--text-2); white-space: nowrap; box-shadow: var(--shadow-2); }
+.empty { text-align: center; padding: 44px 20px; border: 1px dashed var(--line-2); border-radius: var(--r-md); }
+.empty .glyph { width: 40px; height: 40px; margin: 0 auto 14px; border-radius: var(--r-sm); background: var(--accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); display: grid; place-items: center; color: var(--on-accent); font-family: var(--font-serif); font-size: 19px; font-weight: 700; opacity: .92; }
+.shimmer-line { height: 12px; border-radius: var(--r-full); background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-3) 50%, var(--bg-inset) 75%); background-size: 200% 100%; animation: shim 1.8s linear infinite; }
+@keyframes shim { to { background-position: -200% 0; } }
+
+/* ---------- 17 workbench ---------- */
+.wb { border: 1px solid var(--line-2); border-radius: var(--r-lg); overflow: hidden; background: var(--bg-0); position: relative; height: 720px; display: flex; flex-direction: column; }
+.wb-titlebar { display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 14px; background: var(--bg-1); border-bottom: 1px solid var(--line-1); flex: none; }
+.wb-body { flex: 1; display: flex; min-height: 0; }
+.wb-side { width: 236px; flex: none; background: var(--bg-1); border-right: 1px solid var(--line-1); overflow-y: auto; padding: 8px; }
+.wb-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.wb-traj { flex: 1; overflow-y: auto; padding: 18px 22px; }
+.wb-right { width: 296px; flex: none; background: var(--bg-1); border-left: 1px solid var(--line-1); display: flex; flex-direction: column; overflow-y: auto; }
+.wb-comp { flex: none; padding: 12px 16px 14px; border-top: 1px solid var(--line-1); background: var(--bg-0); }
+.wb-overlay { position: absolute; inset: 0; background: rgba(4,5,8,.55); backdrop-filter: blur(3px); display: grid; place-items: center; z-index: 5; animation: fade var(--dur-slow) var(--ease); }
+[data-theme="light"] .wb-overlay { background: rgba(29,31,38,.28); }
+@keyframes fade { from { opacity: 0; } }
+.wb-overlay .appr { animation: popin var(--dur-slow) var(--ease-pop); max-width: 480px; }
+@keyframes popin { from { opacity: 0; transform: scale(.97) translateY(6px); } }
+.wb .composer textarea { min-height: 46px; }
+
+/* theme toggle */
+.theme-btn { position: relative; }
+.hidden { display: none !important; }
+
+/* ---------- 18 premium polish · 高级感工程 ---------- */
+/* quiet scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: var(--r-full); border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: var(--line-3); }
+html { scrollbar-width: thin; scrollbar-color: var(--line-2) transparent; }
+
+/* film grain — 触感层，纸上纤维 */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 70; pointer-events: none; opacity: .028;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+}
+[data-theme="light"] body::after { opacity: .04; }
+
+/* tabular numbers — 流式读数不抖版 */
+.tnum { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; }
+
+/* machined edge — 卡片顶光（暖白，如墨面受光） */
+.tc, .plan, .codeblock, .composer, .diff, .cpal, .wb { box-shadow: inset 0 1px 0 rgba(255,246,235,.04); }
+[data-theme="light"] .tc, [data-theme="light"] .plan, [data-theme="light"] .codeblock,
+[data-theme="light"] .composer, [data-theme="light"] .diff, [data-theme="light"] .cpal, [data-theme="light"] .wb {
+  box-shadow: inset 0 -1px 0 rgba(32,28,20,.035), var(--shadow-1);
+}
+.appr { box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,246,235,.05); }
+
+/* 印章 · seal stamp */
+.seal {
+  display: inline-grid; place-items: center; width: 38px; height: 38px;
+  border: 1.5px solid var(--accent); border-radius: 5px;
+  color: var(--accent); font-family: var(--font-serif); font-size: 19px; font-weight: 700;
+  transform: rotate(-4deg); opacity: .92;
+  box-shadow: inset 0 0 0 1px rgba(214,71,48,.18);
+}
+
+/* stagger — 列表入场呼吸感 */
+@keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.stag.run > * { animation: enter .32s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
+
+/* streaming caret — 节拍器 */
+.caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -.15em; background: var(--accent); animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+
+/* focus ring — 双层：1px 遮断环 + 4px 光环 */
+.ring-rich { box-shadow: 0 0 0 1px var(--bg-0), 0 0 0 4px var(--accent-ring) !important; }
+.ring-cheap { box-shadow: 0 0 0 2px var(--accent) !important; }
+
+/* quiet scroll demo */
+.scroll-box { height: 132px; overflow-y: auto; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--bg-inset); padding: 10px 14px; }
+.scroll-box p { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); line-height: 1.9; }
+
+/* accent explorer — 品牌色试验场 */
+.acc-card { border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--bg-2); padding: 14px; display: flex; flex-direction: column; gap: 8px; transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.acc-card.on { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.acc-chip { height: 44px; border-radius: var(--r-sm); border: 1px solid var(--line-1); }
+.acc-name { color: var(--text-1); }
+.acc-hex { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); }
+.acc-card p { font-size: 12px; color: var(--text-2); line-height: 1.55; flex: 1; }
+.acc-strip { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--bg-2); padding: 16px 18px; margin-top: 14px; }
+
+/* ---------- 19 icons · SVG sprite ---------- */
+.ic { display: block; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.ic.sm { width: 14px; height: 14px; }
+.ic.lg { width: 20px; height: 20px; }
+.icell { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 13px 6px 11px; border: 1px solid var(--line-1); border-radius: var(--r-sm); background: var(--bg-2); color: var(--text-2); }
+.icell:hover { border-color: var(--line-3); color: var(--text-1); }
+.icell .n { font-family: var(--font-mono); font-size: 9.5px; color: var(--text-3); letter-spacing: .03em; }
+
+/* ---------- 20 menus ---------- */
+.menu { min-width: 228px; width: fit-content; background: var(--bg-3); border: 1px solid var(--line-2); border-radius: var(--r-lg); box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,255,255,.05); padding: 6px; }
+.menu .lbl { padding: 8px 10px 4px; display: block; }
+.mi { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: var(--r-sm); font-size: 13px; color: var(--text-2); cursor: pointer; user-select: none; }
+.mi:hover { background: var(--accent-soft); color: var(--text-1); }
+.mi .ic { color: var(--text-3); }
+.mi:hover .ic { color: var(--text-1); }
+.mi .kb { margin-left: auto; }
+.mi.danger { color: var(--danger); }
+.mi.danger:hover { background: var(--danger-soft); }
+.mi.danger .ic { color: var(--danger); }
+.msep { height: 1px; background: var(--line-1); margin: 5px 8px; }
+
+/* ---------- 21 forms ---------- */
+.f-label { display: block; font-size: 12.5px; font-weight: 500; color: var(--text-1); margin-bottom: 6px; }
+.f-help { font-size: 11.5px; color: var(--text-3); margin-top: 5px; }
+.f-err { font-size: 11.5px; color: var(--danger); margin-top: 5px; font-family: var(--font-mono); }
+.inp { height: 36px; width: 100%; background: var(--bg-2); border: 1px solid var(--line-2); border-radius: var(--r-sm); padding: 0 12px; color: var(--text-1); font-size: 13.5px; font-family: var(--font-sans); transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); }
+.inp::placeholder { color: var(--text-3); }
+.inp:hover { border-color: var(--line-3); }
+.inp:focus, .inp.focus { outline: none; border-color: var(--line-3); box-shadow: 0 0 0 3px var(--accent-ring); }
+.inp.err { border-color: var(--danger); }
+.inp.err:focus { box-shadow: 0 0 0 3px var(--danger-soft); }
+.inp[disabled] { opacity: .45; pointer-events: none; }
+.inp-wrap { position: relative; }
+.inp-wrap .lead { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-3); display: flex; }
+.inp-wrap .lead ~ .inp { padding-left: 34px; }
+.inp-wrap .tail { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); }
+.sel-wrap { position: relative; }
+.sel-wrap .inp { padding-right: 32px; cursor: pointer; appearance: none; }
+.sel-wrap .chev { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--text-3); pointer-events: none; display: flex; }
+.tarea { min-height: 74px; resize: vertical; line-height: 1.6; padding: 9px 12px; }
+.ck-row { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.ck { width: 15px; height: 15px; border-radius: 4px; border: 1px solid var(--line-3); flex: none; display: grid; place-items: center; color: transparent; transition: all var(--dur-fast) var(--ease); }
+.ck.on { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.rd { width: 15px; height: 15px; border-radius: var(--r-full); border: 1px solid var(--line-3); flex: none; position: relative; transition: border-color var(--dur-fast) var(--ease); }
+.rd.on { border-color: var(--accent); }
+.rd.on::after { content: ""; position: absolute; inset: 3px; border-radius: var(--r-full); background: var(--accent); }
+.sw-toggle { width: 34px; height: 20px; border-radius: var(--r-full); background: var(--bg-inset); border: 1px solid var(--line-2); position: relative; flex: none; cursor: pointer; transition: all var(--dur-fast) var(--ease); }
+.sw-toggle i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: var(--r-full); background: var(--text-3); transition: all var(--dur-fast) var(--ease); }
+.sw-toggle.on { background: var(--accent); border-color: var(--accent); }
+.sw-toggle.on i { left: 16px; background: var(--on-accent); }
+
+/* ---------- 22 data display ---------- */
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line-1); }
+.tab { padding: 8px 14px; font-size: 13px; color: var(--text-3); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); }
+.tab:hover { color: var(--text-1); }
+.tab.on { color: var(--text-1); font-weight: 500; border-bottom-color: var(--accent); }
+.tbl { border: 1px solid var(--line-2); border-radius: var(--r-md); overflow: hidden; background: var(--bg-2); }
+.tbl table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.tbl th { text-align: left; padding: 8px 14px; background: var(--bg-1); border-bottom: 1px solid var(--line-1); font-family: var(--font-mono); font-size: 10.5px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.tbl td { padding: 8px 14px; border-bottom: 1px solid var(--line-1); color: var(--text-2); }
+.tbl tbody tr:last-child td { border-bottom: none; }
+.tbl tbody tr { transition: background var(--dur-fast) var(--ease); }
+.tbl tbody tr:hover { background: var(--bg-1); }
+.tbl .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text-1); }
+.tbl .mono { font-family: var(--font-mono); font-size: 12px; color: var(--text-1); }
+.tree { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--bg-2); padding: 8px 6px; }
+.tn { display: flex; align-items: center; gap: 7px; padding: 3.5px 8px; border-radius: var(--r-xs); color: var(--text-2); cursor: pointer; }
+.tn:hover { background: var(--bg-1); color: var(--text-1); }
+.tn.hit { background: var(--accent-soft); color: var(--accent); }
+.tn .ic { width: 13px; height: 13px; color: var(--text-3); }
+.tn.hit .ic { color: var(--accent); }
+.tn .chev { width: 12px; color: var(--text-3); display: flex; }
+.tnest { margin-left: 14px; padding-left: 10px; border-left: 1px solid var(--line-1); }
+.crumb { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-3); }
+.crumb b { color: var(--text-1); font-weight: 500; }
+.crumb .ic { width: 12px; height: 12px; }
+.callout { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; border: 1px solid var(--line-2); border-left: 2px solid var(--line-3); border-radius: var(--r-sm); background: var(--bg-2); font-size: 12.5px; color: var(--text-2); }
+.callout .ic { margin-top: 2px; }
+.callout .t { color: var(--text-1); font-weight: 500; }
+.c-info { border-left-color: var(--info); } .c-info .ic { color: var(--info); }
+.c-success { border-left-color: var(--success); } .c-success .ic { color: var(--success); }
+.c-warn { border-left-color: var(--warn); } .c-warn .ic { color: var(--warn); }
+.c-danger { border-left-color: var(--danger); } .c-danger .ic { color: var(--danger); }
+
+/* ---------- 23 app shell diagram ---------- */
+.shellbox { border: 1px solid var(--line-3); border-radius: var(--r-lg); overflow: hidden; background: var(--bg-0); }
+.sh-title { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px; background: var(--bg-1); border-bottom: 1px solid var(--line-1); }
+.sh-body { display: flex; height: 300px; }
+.sh-region { position: relative; border-right: 1px dashed var(--line-3); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 12px; }
+.sh-region:last-child { border-right: none; }
+.dim { font-family: var(--font-mono); font-size: 9.5px; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-xs); padding: 1px 6px; letter-spacing: .04em; }
+.mini { border: 1px solid var(--line-2); border-radius: var(--r-sm); overflow: hidden; background: var(--bg-0); }
+.mini .m-bar { height: 14px; background: var(--bg-1); border-bottom: 1px solid var(--line-1); }
+.mini .m-body { display: flex; height: 92px; }
+.mini .m-c { border-right: 1px solid var(--line-1); }
+.mini .m-c:last-child { border-right: none; }
+.mini-lbl { font-family: var(--font-mono); font-size: 10px; color: var(--text-3); margin-top: 7px; text-align: center; letter-spacing: .04em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stag.run > * { animation: none; }
+  .caret, .pulse, .shimmer-line { animation: none; }
+}
+@media (max-width: 900px) {
+  .g4, .g6 { grid-template-columns: repeat(2, 1fr); }
+  .g3 { grid-template-columns: 1fr; }
+  .wb-right { display: none; }
+  .wb-side { width: 190px; }
+}
+</style>
+</head>
+<body>
+
+<!-- icon sprite · 16 grid / stroke 1.5 / round caps·joins / currentColor -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-doc" viewBox="0 0 16 16"><path d="M3.5 2h5.5l3 3v9h-8.5z"/><path d="M9 2v3h3"/><path d="M5.5 8.5h5M5.5 10.5h3.5"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 16 16"><path d="M11.5 2.5l2 2L6 12l-3 1 1-3z"/><path d="M10 4l2 2"/></symbol>
+    <symbol id="i-term" viewBox="0 0 16 16"><rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M4.5 6.5l1.8 1.8-1.8 1.8"/><path d="M7.8 10.5h3.2"/></symbol>
+    <symbol id="i-star" viewBox="0 0 16 16"><path d="M8 2.5v11M3.2 5.25l9.6 5.5M12.8 5.25l-9.6 5.5"/></symbol>
+    <symbol id="i-find" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.3"/><path d="M10.2 10.2l3.3 3.3"/></symbol>
+    <symbol id="i-todo" viewBox="0 0 16 16"><rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5.2 8.2l1.8 1.8 3.8-3.8"/></symbol>
+    <symbol id="i-web" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2 6.5h12"/><path d="M4 5h.01M6 5h.01"/></symbol>
+    <symbol id="i-qa" viewBox="0 0 16 16"><path d="M3 3.5h10v7H8.5L5.5 13.5v-3H3z"/><path d="M7.2 6a1.3 1.3 0 012.6.4c0 .8-1.3 1-1.3 1.8"/><path d="M8.5 9.8h.01"/></symbol>
+    <symbol id="i-task" viewBox="0 0 16 16"><rect x="2" y="2.5" width="4" height="4" rx="1"/><rect x="10" y="9.5" width="4" height="4" rx="1"/><path d="M6 4.5h3.5a2.5 2.5 0 012.5 2.5v2.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 13.5V3M3.8 7.2L8 3l4.2 4.2"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/></symbol>
+    <symbol id="i-rw" viewBox="0 0 16 16"><path d="M3 3.2v3.6h3.6"/><path d="M3.6 9.8a4.8 4.8 0 1 0 .6-5.2L3 6.5"/></symbol>
+    <symbol id="i-fork" viewBox="0 0 16 16"><circle cx="4.5" cy="3.8" r="1.9"/><circle cx="11.5" cy="3.8" r="1.9"/><circle cx="8" cy="12.2" r="1.9"/><path d="M4.5 5.7v.8c0 1.1.7 2 1.8 2.4 1.1.4 2.3.4 3.4 0 1.1-.4 1.8-1.3 1.8-2.4v-.8"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 16 16"><path d="M6.5 2.5h3M8 2.5v2"/><path d="M5.8 4.5h4.4l-.6 3.1a2 2 0 01-2 1.6h-.4a2 2 0 01-2-1.6z"/><path d="M8 9.2v4.3"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M2.5 10.5v-7a1 1 0 011-1h7"/></symbol>
+    <symbol id="i-ok" viewBox="0 0 16 16"><path d="M3 8.5l3.3 3.3L13 5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+    <symbol id="i-cr" viewBox="0 0 16 16"><path d="M6 3.5L10.5 8 6 12.5"/></symbol>
+    <symbol id="i-cd" viewBox="0 0 16 16"><path d="M3.5 6L8 10.5 12.5 6"/></symbol>
+    <symbol id="i-layer" viewBox="0 0 16 16"><path d="M8 2.2l5.8 2.9L8 8 2.2 5.1z"/><path d="M2.2 8.4L8 11.3l5.8-2.9"/><path d="M2.2 11.2L8 14.1l5.8-2.9"/></symbol>
+    <symbol id="i-theme" viewBox="0 0 16 16"><path d="M8 2.2a5.8 5.8 0 100 11.6z" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="5.8"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.2 1.6"/></symbol>
+    <symbol id="i-set" viewBox="0 0 16 16"><path d="M2.5 5h6M10.5 5h3M2.5 11h3M7.5 11h6"/><circle cx="9.2" cy="5" r="1.7"/><circle cx="6" cy="11" r="1.7"/></symbol>
+    <symbol id="i-dir" viewBox="0 0 16 16"><path d="M2 4h4.2l1.6 2H14v6.5H2z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 2h5l3 3v9H4z"/><path d="M9 2v3h3"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 16 16"><path d="M8.5 1.5L3.5 9h4l-1 5.5L11.5 7h-4z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10"/><path d="M5 4.5V3.2c0-.7.5-1.2 1.2-1.2h3.6c.7 0 1.2.5 1.2 1.2v1.3"/><path d="M4.5 4.5l.7 9c.1.8.7 1.5 1.5 1.5h2.6c.8 0 1.4-.7 1.5-1.5l.7-9"/><path d="M6.8 7.5v4M9.2 7.5v4"/></symbol>
+    <symbol id="i-user" viewBox="0 0 16 16"><circle cx="8" cy="5.2" r="2.7"/><path d="M3 14c.8-2.7 2.7-4 5-4s4.2 1.3 5 4"/></symbol>
+    <symbol id="i-ar" viewBox="0 0 16 16"><path d="M3 8h10M9 4l4 4-4 4"/></symbol>
+  </defs>
+</svg>
+
+<header class="topbar">
+  <div class="logo">书</div>
+  <h1>墨仪 <span class="sub">· Ink Instrument · shuyi-harness 设计语言 v2 · 静谧仪器，着墨成仪</span></h1>
+  <div class="spacer"></div>
+  <span class="lbl">spec sheet</span>
+  <button class="btn sm b-secondary theme-btn" id="themeBtn" onclick="toggleTheme()">
+    <span id="themeIcon">墨</span><span id="themeLabel">墨</span>
+  </button>
+</header>
+
+<div class="wrap">
+
+<!-- ================= 01 COLOR ================= -->
+<section id="s1">
+  <div class="sec-h"><span class="no">01</span><h2>墨色 · Ink & Paper</h2></div>
+  <p class="sec-d">深色是墨——「墨分五色」，焦浓重淡清五阶替代蓝灰科技调，暖中性基底如拓片碑帖；浅色是纸——宣纸帘纹的暖象牙白。语义色即传统颜料：一幅水墨画上唯一的红点是印章——色彩即信号的千年实践。</p>
+  <div class="lbl" style="margin-bottom:10px">墨五色 · dark surfaces</div>
+  <div class="grid g6" style="margin-bottom:20px">
+    <div class="sw"><div class="chip" style="background:var(--bg-0)"></div><div class="meta"><div class="n">bg-0 焦墨</div><div class="v">#0f0e0d</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-1)"></div><div class="meta"><div class="n">bg-1 浓墨</div><div class="v">#151413</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-2)"></div><div class="meta"><div class="n">bg-2 重墨</div><div class="v">#1c1b19</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-3)"></div><div class="meta"><div class="n">bg-3 淡墨</div><div class="v">#242320</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--bg-inset);border-bottom:1px solid var(--line-1)"></div><div class="meta"><div class="n">inset 沉墨</div><div class="v">#0a0908</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><div class="n">印 · 仪式位</div><div class="v">#d64730</div></div></div>
+  </div>
+  <div class="lbl" style="margin-bottom:10px">颜料 · semantic pigments</div>
+  <div class="grid g6">
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><div class="n">朱砂 交互/进行中</div><div class="v">#d64730</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="meta"><div class="n">石绿 完成</div><div class="v">#35b98a</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="meta"><div class="n">茜红 拒绝/错误</div><div class="v">#ef5f7d</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--warn)"></div><div class="meta"><div class="n">藤黄 待审批/用量</div><div class="v">#f0b34e</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--info)"></div><div class="meta"><div class="n">群青 提示（v1靛降格）</div><div class="v">#7d84ea</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--text-3)"></div><div class="meta"><div class="n">黛 空闲</div><div class="v">#63615c</div></div></div>
+  </div>
+  <div class="spec">纸主题（右上「墨/纸」切换）：生纸 #f3f0e9 / 熟纸 #f7f5ee / 卷面 #fcfbf7 · 渐变退役——仪式从"渐变光效"移交"盖印动作"（09 节）· 发丝线转暖调 rgba(255,246,235,·)</div>
+</section>
+
+<!-- ================= 02 TYPOGRAPHY ================= -->
+<section id="s2">
+  <div class="sec-h"><span class="no">02</span><h2>排版 · Typography</h2></div>
+  <p class="sec-d">Sans 叙述，Mono 读数。Inter + JetBrains Mono 双轨（落地时自托管，中文回退 PingFang / Noto Sans SC）。凡仪器读数皆 mono。</p>
+  <div style="border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:8px 24px">
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)"><div style="font-family:var(--font-serif);font-size:25px;font-weight:600;letter-spacing:.01em">Display 25 宋体 · 会话重建完成</div><div class="spec">Noto Serif SC 600 / +0.01em · 宋版书标题轨——大标题与区块题用宋，正文用黑，读数用 mono</div></div>
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)"><div style="font-size:20px;font-weight:600;letter-spacing:-.015em">Heading 20 · 变更审查</div><div class="spec">600 · 面板/弹窗标题</div></div>
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)"><div style="font-size:16px;font-weight:600">Heading 16 · 执行计划</div><div class="spec">600 · 卡片组标题</div></div>
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)"><div style="font-size:14px">Body 14 · 默认正文，用于弹窗等决策场景。中文与西文混排时行高 1.6。</div><div class="spec">400 / 1.6</div></div>
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)"><div style="font-size:13px;line-height:1.55;color:var(--text-2)">Body-dense 13 · Trajectory 信息流专用密度——工具卡片、消息、列表默认档。</div><div class="spec">400 / 1.55 · 密度即尊重</div></div>
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)"><div style="font-size:12px;color:var(--text-3)">Meta 12 · 辅助说明与会话列表 meta 信息。</div><div class="spec">400 · text-3</div></div>
+    <div style="padding:16px 0;border-bottom:1px solid var(--line-1)">
+      <div style="display:flex;gap:18px;align-items:baseline;flex-wrap:wrap">
+        <span class="lbl" style="color:var(--accent)">label-mono · RUNNING</span>
+        <span class="lbl" style="color:var(--warn)">AWAITING APPROVAL</span>
+        <span class="lbl">bash · 412ms · seq 0187</span>
+        <span class="lbl" style="color:var(--info)">ctx 43%</span>
+      </div>
+      <div class="spec">11px / 500 / mono / uppercase / +0.06em · Technical Mono 落地——仪器读数的统一形态</div>
+    </div>
+    <div style="padding:16px 0"><code style="font-size:13px;color:var(--text-2)">const loop = propose → permission → execute → observe</code><div class="spec">code 13 mono · 代码/命令/路径</div></div>
+  </div>
+</section>
+
+<!-- ================= 03 BUTTONS ================= -->
+<section id="s3">
+  <div class="sec-h"><span class="no">03</span><h2>按钮与操作 · Buttons</h2></div>
+  <p class="sec-d">告别胶囊。统一 8px 圆角、三档高度（30/36/42）。渐变不再出现在任何按钮上——发送键是纯色方形圆角。</p>
+  <div style="display:flex;flex-direction:column;gap:16px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn md b-primary">批准执行</button>
+      <button class="btn md b-secondary">编辑后批准</button>
+      <button class="btn md b-ghost">本会话放行</button>
+      <button class="btn md b-destructive">拒绝</button>
+      <button class="btn md b-danger-soft">Revert</button>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button class="btn sm b-primary">Accept</button>
+      <button class="btn md b-primary">发送给 Agent</button>
+      <button class="btn lg b-primary"><span class="spin"></span>构建中…</button>
+      <button class="btn md b-primary" disabled>已批准</button>
+      <span style="width:12px"></span>
+      <button class="icon-btn" title="编辑"><svg class="ic"><use href="#i-pen"/></svg></button>
+      <button class="icon-btn" title="回滚"><svg class="ic"><use href="#i-rw"/></svg></button>
+      <button class="icon-btn" title="分叉"><svg class="ic"><use href="#i-fork"/></svg></button>
+      <button class="icon-btn" title="置顶"><svg class="ic"><use href="#i-pin"/></svg></button>
+      <span style="width:12px"></span>
+      <span class="kbd">⌘K</span><span class="kbd">Esc</span><span class="kbd">Ctrl N</span>
+    </div>
+  </div>
+  <div class="spec">primary = accent 纯色 · secondary = bg-2 + line-2 描边，hover 提升 bg-3 · destructive 仅破坏性确认 · focus ring 3px accent-ring</div>
+</section>
+
+<!-- ================= 04 BADGES ================= -->
+<section id="s4">
+  <div class="sec-h"><span class="no">04</span><h2>徽章与状态 · Signals</h2></div>
+  <p class="sec-d">8px 状态点是整个系统的"指示灯"。会话四态：进行中（accent，pulse）/ 等待审批（warn，pulse）/ 空闲（idle）/ 错误（danger）。</p>
+  <div style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="badge bd-accent"><span class="dot d-accent pulse"></span>running</span>
+      <span class="badge bd-warn"><span class="dot d-warn pulse"></span>awaiting approval</span>
+      <span class="badge bd-success"><span class="dot d-success"></span>done</span>
+      <span class="badge bd-danger"><span class="dot d-danger"></span>failed</span>
+      <span class="badge"><span class="dot d-idle"></span>idle</span>
+      <span class="badge">plan mode</span>
+      <span class="badge bd-info">preview</span>
+    </div>
+    <div style="display:flex;gap:24px;align-items:center;padding:14px 16px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2)">
+      <span style="display:flex;gap:8px;align-items:center"><span class="dot d-accent pulse"></span><span class="lbl" style="color:var(--text-2)">running</span></span>
+      <span style="display:flex;gap:8px;align-items:center"><span class="dot d-warn pulse"></span><span class="lbl" style="color:var(--text-2)">awaiting</span></span>
+      <span style="display:flex;gap:8px;align-items:center"><span class="dot d-success"></span><span class="lbl" style="color:var(--text-2)">done</span></span>
+      <span style="display:flex;gap:8px;align-items:center"><span class="dot d-danger"></span><span class="lbl" style="color:var(--text-2)">failed</span></span>
+      <span style="display:flex;gap:8px;align-items:center"><span class="dot d-idle"></span><span class="lbl" style="color:var(--text-2)">idle</span></span>
+      <span style="flex:1"></span>
+      <span class="lbl">dot 8px · pulse 1.6s · 色彩即信号</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 05 SURFACES ================= -->
+<section id="s5">
+  <div class="sec-h"><span class="no">05</span><h2>表面分层 · Surfaces</h2></div>
+  <p class="sec-d">四层表面 + inset 凹陷。深色下阴影被吞没，层次由 3% 亮度步进与三档发丝线承担；阴影只属于浮层。</p>
+  <div class="surf" style="background:var(--bg-1)">
+    <span class="lbl">bg-1 · panel — 侧栏 / 右面板容器</span>
+    <div class="surf" style="background:var(--bg-2);margin-top:4px">
+      <span class="lbl">bg-2 · card — 消息 / 工具卡 / 输入区</span>
+      <div style="display:flex;gap:12px;margin-top:4px">
+        <div class="surf" style="background:var(--bg-3);flex:1;padding:14px">
+          <span class="lbl">bg-3 · float — 弹窗 / 菜单</span>
+          <div class="spec" style="margin-top:6px">shadow-pop 专属层</div>
+        </div>
+        <div class="surf" style="background:var(--bg-inset);flex:1;padding:14px">
+          <span class="lbl">inset — 代码 / 终端 / diff</span>
+          <div class="spec" style="margin-top:6px">比 bg-0 更深一档的"凹陷"</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="spec">line-1 .06 分区线 · line-2 .11 卡片描边 · line-3 .18 交互边（输入框/hover 提升）</div>
+</section>
+
+<!-- ================= 06 TOOL CARDS ================= -->
+<section id="s6">
+  <div class="sec-h"><span class="no">06</span><h2>工具调用卡片 · Tool Calls</h2></div>
+  <p class="sec-d">Trajectory 的灵魂组件。头部 38px：状态点 + mono 工具名 + mono 目标 + 耗时；默认折叠，点击展开 inset 读数区。（下方卡片可点击）</p>
+  <div class="grid g2">
+    <div>
+      <div class="tc open" onclick="this.classList.toggle('open')">
+        <div class="tc-h"><span class="dot d-success"></span><span class="tool">BASH</span><span class="target">pnpm --filter web build</span><span class="t">412ms</span><span class="chev">▶</span></div>
+        <div class="tc-b">
+<pre>$ pnpm --filter web build
+<span class="cm">vite v8 building for production…</span>
+<span class="s">✓ 342 modules transformed</span>
+dist/index.html                 <span class="k">0.71</span> kB
+dist/assets/index-4f8a2c.js   <span class="k">186.42</span> kB │ gzip: 58.11</pre>
+          <div class="result">exit <b>0</b> · 24 lines · dist/ 已更新</div>
+        </div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="tc" onclick="this.classList.toggle('open')">
+        <div class="tc-h stat-wait"><span class="dot d-warn pulse"></span><span class="tool">BASH</span><span class="target">rm -rf node_modules && pnpm install</span><span class="t">—</span><span class="chev">▶</span></div>
+        <div class="tc-b">
+<pre>$ rm -rf node_modules <span class="p">&&</span> pnpm install</pre>
+          <div class="result" style="color:var(--warn)">等待审批 · fail-closed</div>
+        </div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="tc" onclick="this.classList.toggle('open')">
+        <div class="tc-h"><span class="dot d-success"></span><span class="tool">GREP</span><span class="target">"startTurn" — apps/server/src</span><span class="t">38ms</span><span class="chev">▶</span></div>
+        <div class="tc-b"><pre>apps/server/src/session.ts:114  <span class="k">await</span> startTurn(...)
+apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k">new</span> Turn(...)</pre><div class="result">2 files · 2 matches</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="tc" onclick="this.classList.toggle('open')">
+        <div class="tc-h"><span class="dot d-success"></span><span class="tool">READ</span><span class="target">apps/web/src/routes/index.tsx</span><span class="t">12ms</span><span class="chev">▶</span></div>
+        <div class="tc-b"><pre><span class="cm">L1–80 / 318</span> · 8.2 kB</pre><div class="result">318 lines · 分页读取</div></div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="tc open" onclick="this.classList.toggle('open')">
+        <div class="tc-h"><span class="dot d-success"></span><span class="tool">EDIT</span><span class="target">packages/ui/src/styles/globals.css</span><span class="t">26ms</span><span class="chev">▶</span></div>
+        <div class="tc-b">
+<pre><span class="cm">str_replace · 1 处</span>
+<span style="color:var(--danger)">- --radius: 0.625rem;</span>
+<span style="color:var(--success)">+ --radius: 0.5rem;</span></pre>
+          <div class="result">外科式增量编辑 · <b>+1 −1</b></div>
+        </div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="tc" onclick="this.classList.toggle('open')">
+        <div class="tc-h stat-fail"><span class="dot d-danger"></span><span class="tool">WRITE</span><span class="target">src/gen/legacy-styles.css</span><span class="t">9ms</span><span class="chev">▶</span></div>
+        <div class="tc-b"><pre>整文件重写被拒绝：<span class="k">editPolicy</span> = surgical</pre><div class="result" style="color:var(--danger)">被权限服务拦截 · 未执行</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="spec">头部：dot 6px + tool 11.5px/600 mono accent + target 12px mono text-2 + 耗时右对齐 · 状态点随工具生命周期迁移（accent→success / danger / warn）</div>
+</section>
+
+<!-- ================= 07 DIFF ================= -->
+<section id="s7">
+  <div class="sec-h"><span class="no">07</span><h2>变更视图 · Diff</h2></div>
+  <p class="sec-d">inset 底 + mono + 行号。增行 success-soft 底配 2px 左线，删行同理 danger。逐文件 accept / revert 就在文件头。</p>
+  <div class="diff" style="max-width:720px">
+    <div class="diff-f">
+      <span class="dot d-success" style="width:6px;height:6px"></span>
+      <span class="path"><b>packages/ui/src/styles/globals.css</b></span>
+      <span class="add">+12</span><span class="del">−3</span>
+      <button class="btn sm b-secondary">Revert</button>
+      <button class="btn sm b-primary">Accept</button>
+    </div>
+    <div class="diff-l l-del"><span class="ln">48</span><span class="code">:root {</span></div>
+    <div class="diff-l l-del"><span class="ln">49</span><span class="code">  --radius: 0.625rem;</span></div>
+    <div class="diff-l"><span class="ln">49</span><span class="code">  --radius: 0.5rem;   /* sm=6 · md=8 · lg=12 */</span></div>
+    <div class="diff-l"><span class="ln">50</span><span class="code">  --font-sans: "Inter Variable", "PingFang SC", sans-serif;</span></div>
+    <div class="diff-l l-add"><span class="ln">51</span><span class="code">  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;</span></div>
+    <div class="diff-l l-add"><span class="ln">52</span><span class="code">  --label-mono: 500 11px/1 var(--font-mono);</span></div>
+    <div class="diff-l"><span class="ln">53</span><span class="code">}</span></div>
+  </div>
+  <div class="spec">>2000 行退化整文件块（沿用 v0.4 LCS diff 策略）· 文件头统计与按钮均 mono</div>
+</section>
+
+<!-- ================= 08 MESSAGES ================= -->
+<section id="s8">
+  <div class="sec-h"><span class="no">08</span><h2>消息流 · Trajectory</h2></div>
+  <p class="sec-d">用户右对齐 accent-soft 气泡；助手全宽 markdown 流式渲染。悬浮显形操作条：编辑 / 回滚 / 分叉。系统事件是流中的 mono 标记。</p>
+  <div style="border:1px solid var(--line-1);border-radius:var(--r-md);padding:6px 20px;max-width:760px">
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0">
+      <span class="lbl" style="color:var(--text-3)">checkpoint</span>
+      <span style="flex:1;height:1px;background:var(--line-1)"></span>
+      <span class="lbl" style="color:var(--text-3)">seq 0186</span>
+    </div>
+    <div class="msg-user"><div class="bubble">把 web 的圆角从胶囊统一成 8px，然后跑一次构建验证</div></div>
+    <div class="msg-a">
+      <p>收到。我会先改 <span class="inline-code">globals.css</span> 的 radius token，再替换按钮组件的硬编码，最后构建验证。</p>
+      <h4>步骤</h4>
+      <ul>
+        <li>收敛 <span class="inline-code">--radius</span> 为 0.5rem 并派生三档</li>
+        <li>清除 999px 胶囊，统一 <span class="inline-code">r-sm</span></li>
+        <li><span class="inline-code">pnpm --filter web build</span> 验证</li>
+      </ul>
+      <div class="codeblock">
+        <div class="ch"><span class="lbl">css</span><span class="lbl">globals.css</span></div>
+        <pre>:root {
+  --r-sm: 8px;   /* buttons · inputs · tool cards */
+  --r-md: 10px;  /* messages · panels */
+  --r-lg: 12px;  /* dialogs · palette */
+}</pre>
+      </div>
+      <div class="msg-acts">
+        <button class="icon-btn" title="编辑重发"><svg class="ic"><use href="#i-pen"/></svg></button>
+        <button class="icon-btn" title="回滚到此"><svg class="ic"><use href="#i-rw"/></svg></button>
+        <button class="icon-btn" title="从此分叉"><svg class="ic"><use href="#i-fork"/></svg></button>
+      </div>
+    </div>
+  </div>
+  <div class="spec">user 气泡 r-md 无尖角 · 助手 body-dense 13px · 操作条 opacity 0→1 on hover · 事件标记行高 36px 不抢占注意力</div>
+</section>
+
+<!-- ================= 09 PLAN & APPROVAL ================= -->
+<section id="s9">
+  <div class="sec-h"><span class="no">09</span><h2>计划与审批 · Plan & Approval</h2></div>
+  <p class="sec-d">决策时刻，舒适密度。计划卡 accent 顶线 + 任务清单 + 双按钮；审批弹窗完整入参不截断——fail-closed 的可视化承诺。</p>
+  <div class="grid g2" style="align-items:start">
+    <div class="plan">
+      <div class="plan-h"><span class="lbl" style="color:var(--accent)">plan proposal</span><span class="lbl">mode: plan</span></div>
+      <div class="plan-h"><h3>执行计划 · Web 重皮第一步</h3></div>
+      <ul class="tasks">
+        <li class="done"><span class="cbx">✓</span>token 体系写入 globals.css（radius / line / surface）</li>
+        <li class="done"><span class="cbx">✓</span>按钮组件去胶囊，统一 r-sm</li>
+        <li><span class="cbx"></span>工具卡头部接入 label-mono 规格</li>
+        <li><span class="cbx"></span>双主题截图目检回归</li>
+      </ul>
+      <div class="plan-f">
+        <button class="btn md b-primary">批准执行</button>
+        <button class="btn md b-secondary">编辑后批准</button>
+      </div>
+    </div>
+    <div class="appr">
+      <div class="appr-h">
+        <span class="dot d-warn pulse"></span>
+        <h3>审批请求 · bash</h3>
+        <span class="lbl" style="color:var(--warn)">awaiting approval</span>
+      </div>
+      <div class="appr-cmd">$ git push origin <span class="p">--force</span> origin/restyle-token-v1
+<span class="lbl" style="font-size:10px">cwd: ~/workspace/github/openshuyi/shuyi-harness</span></div>
+      <div class="appr-rule">已记忆规则：bash:pnpm test* · bash:pnpm build* （本次命令不匹配任何规则）</div>
+      <div class="appr-f">
+        <button class="btn md b-primary">批准</button>
+        <button class="btn md b-destructive">拒绝</button>
+        <span style="flex:1"></span>
+        <button class="btn md b-ghost">本会话放行 <code style="font-size:11px">git push*</code></button>
+      </div>
+    </div>
+  </div>
+  <div class="spec">弹窗 r-lg + shadow-pop + ease-pop 入场 · 命令区 inset mono 可滚动不截断 · 规则 glob 用 mono 展示</div>
+  <div style="display:flex;gap:18px;align-items:center;margin-top:18px;padding:16px 18px;border:1px dashed var(--line-2);border-radius:var(--r-md)">
+    <span class="seal">准</span>
+    <div style="flex:1">
+      <div class="lbl" style="color:var(--accent)">盖章 · approval stamp</div>
+      <div style="font-size:12.5px;color:var(--text-2);margin-top:3px">批准 = 盖印。审批通过后「准」印落在轨迹流上（旋转 -4°、92% 不透明度、5px 印框圆角）——fail-closed 权限体系的仪式化终点，水墨画卷上唯一的一点朱砂。拒绝不盖章：留白即否。</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:var(--bg-inset);border-radius:var(--r-sm);font-family:var(--font-mono);font-size:11.5px;color:var(--text-3)">
+      <span>seq 0187</span><span class="dot d-success" style="width:6px;height:6px"></span><span style="color:var(--text-2)">bash ✓ 已批准</span>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 10 COMPOSER ================= -->
+<section id="s10">
+  <div class="sec-h"><span class="no">10</span><h2>输入区 · Composer</h2></div>
+  <p class="sec-d">聚焦时 line-3 + accent-ring。模式分段控件、mono 模型选择、@引用与排队 chips、常驻用量条（ctx >70% 转暖色警告）。</p>
+  <div style="max-width:760px">
+    <div class="composer">
+      <textarea rows="2" placeholder="描述任务… @ 引用文件，/ 斜杠命令，⌘K 命令面板">重构 composer 里的模式切换为分段控件，保持 Esc 中断行为</textarea>
+      <div class="chips">
+        <span class="chip-q chip-ref">@apps/web/src/components/composer.tsx</span>
+        <span class="chip-q">继续补充 e2e 用例 <button title="撤队">×</button></span>
+      </div>
+      <div class="comp-f">
+        <div class="seg"><button class="on">Build</button><button>Plan</button></div>
+        <button class="model-pick">glm-5.3 ▾</button>
+        <span style="flex:1"></span>
+        <span class="lbl" style="font-size:10px">queued 1</span>
+        <button class="send" title="发送"><svg class="ic"><use href="#i-send"/></svg></button>
+      </div>
+      <div class="usage"><span>in 12.4k</span><span>out 3.2k</span><span>$0.0831</span><span class="u-ctx" style="color:var(--text-2)">ctx 43%</span><div class="bar"><i style="width:43%"></i></div></div>
+    </div>
+    <div style="height:14px"></div>
+    <div class="composer">
+      <textarea rows="1" placeholder="…"></textarea>
+      <div class="comp-f">
+        <div class="seg"><button>Build</button><button class="on">Plan</button></div>
+        <span style="flex:1"></span>
+        <button class="send stop" title="停止"><svg class="ic"><use href="#i-stop"/></svg></button>
+      </div>
+      <div class="usage hot"><span>in 98.1k</span><span>out 21.7k</span><span>$0.6120</span><span class="u-ctx">ctx 87% · 即将压缩</span><div class="bar"><i style="width:87%"></i></div></div>
+    </div>
+  </div>
+  <div class="spec">发送键 = accent 纯色 r-sm 方形（运行中翻转成停止）· 用量读数全 mono · 排队 chip 可撤队（message.queued 审计事件）</div>
+</section>
+
+<!-- ================= 11 SESSIONS ================= -->
+<section id="s11">
+  <div class="sec-h"><span class="no">11</span><h2>会话列表 · Sessions</h2></div>
+  <p class="sec-d">分组头 label-mono + 计数；置顶项 2px accent 竖线；选中项 accent-soft 底。meta 行是仪器读数：相对时间 + token 摘要。</p>
+  <div class="slist" style="max-width:400px">
+    <div class="search"><span style="font-size:12px;display:flex"><svg class="ic sm"><use href="#i-find"/></svg></span><input placeholder="搜索会话…"><span class="kbd" style="font-size:10px;padding:1px 5px">⌘K</span></div>
+    <div class="sgroup"><span class="lbl" style="color:var(--accent)">pinned</span><span class="lbl">1</span></div>
+    <div class="sitem pin sel"><span class="st dot d-accent pulse"></span><div class="body"><div class="ttl">Web 重皮 · token 体系迁移</div><div class="meta">2m · in 12.4k · $0.083</div></div></div>
+    <div class="sgroup"><span class="lbl">running</span><span class="lbl">2</span></div>
+    <div class="sitem"><span class="st dot d-accent pulse"></span><div class="body"><div class="ttl">e2e 回归：rewind 三模式</div><div class="meta">just now · in 48.2k</div></div></div>
+    <div class="sitem"><span class="st dot d-warn pulse"></span><div class="body"><div class="ttl">迁移脚本 · 等待 bash 审批</div><div class="meta">8m · in 9.1k</div></div></div>
+    <div class="sgroup"><span class="lbl">idle</span><span class="lbl">2</span></div>
+    <div class="sitem"><span class="st dot d-idle"></span><div class="body"><div class="ttl">调研 Bento 布局用于看板</div><div class="meta">3h · in 22.0k</div></div></div>
+    <div class="sitem"><span class="st dot d-danger"></span><div class="body"><div class="ttl">部署脚本修复</div><div class="meta">yesterday · exit 1</div></div></div>
+  </div>
+  <div class="spec">分组：pinned / running / awaiting / idle · 分组折叠 · 列表项 13px + meta 10.5px mono</div>
+</section>
+
+<!-- ================= 12 PALETTE ================= -->
+<section id="s12">
+  <div class="sec-h"><span class="no">12</span><h2>命令面板 · Command Palette</h2></div>
+  <p class="sec-d">⌘K。label-mono 分组 + kbd 快捷键右对齐。一个入口，全部动作。</p>
+  <div class="cpal">
+    <div class="in"><span style="color:var(--text-3);display:flex"><svg class="ic sm"><use href="#i-find"/></svg></span><input value="re" readonly><span class="kbd">Esc</span></div>
+    <div class="grp"><div class="lbl" style="padding:4px 10px 6px">action</div>
+      <div class="item cur"><span class="ic"><svg class="ic sm"><use href="#i-rw"/></svg></span>回滚最近 turn<span class="kb kbd">⌘⇧R</span></div>
+      <div class="item"><span class="ic"><svg class="ic sm"><use href="#i-layer"/></svg></span>打开变更面板<span class="kb kbd">⌘⇧C</span></div>
+    </div>
+    <div class="grp" style="padding-bottom:8px"><div class="lbl" style="padding:4px 10px 6px">session</div>
+      <div class="item"><span class="ic"><svg class="ic sm"><use href="#i-plus"/></svg></span>新会话<span class="kb kbd">⌘N</span></div>
+      <div class="item"><span class="ic"><svg class="ic sm"><use href="#i-fork"/></svg></span>分叉当前会话…</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 13 FEEDBACK ================= -->
+<section id="s13">
+  <div class="sec-h"><span class="no">13</span><h2>反馈 · Feedback</h2></div>
+  <p class="sec-d">Toast 左侧 2px 语义线；tooltip r-xs 轻量；空状态是渐变的第二个仪式位；流式 shimmer 是信号不是表演。</p>
+  <div class="grid g2" style="align-items:start">
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div class="toast"><span class="dot d-success"></span><span class="t-lbl">回滚完成 · 仅代码（12 文件已恢复）</span><span style="flex:1"></span><span class="lbl" style="font-size:10px">now</span></div>
+      <div class="toast err"><span class="dot d-danger"></span><span class="t-lbl">构建失败 · exit 1（查看工具卡片）</span></div>
+      <div style="display:flex;gap:14px;align-items:center;padding:6px 0">
+        <span class="tooltip-demo"><button class="btn sm b-secondary">悬停看 tooltip</button><span class="tt">interrupt · Esc</span></span>
+        <span class="lbl" style="display:inline-flex;gap:8px;align-items:center"><span class="dot d-accent pulse"></span>thinking</span>
+        <span style="display:inline-flex;gap:2px;align-items:center"><span class="dot d-accent" style="animation-delay:0s"></span><span class="dot d-accent" style="width:5px;height:5px;animation-delay:.2s"></span><span class="dot d-accent" style="width:4px;height:4px;animation-delay:.4s"></span></span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;max-width:340px">
+        <div class="shimmer-line" style="width:88%"></div>
+        <div class="shimmer-line" style="width:64%"></div>
+        <div class="shimmer-line" style="width:76%"></div>
+      </div>
+    </div>
+    <div class="empty">
+      <div class="glyph">书</div>
+      <div style="font-size:14px;font-weight:600;margin-bottom:6px">开始一段新会话</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:16px">会话独立于界面存活——关闭标签页，agent 继续运行</div>
+      <button class="btn md b-primary">新会话 <span class="kbd" style="margin-left:6px;border-color:color-mix(in srgb,var(--on-accent) 40%,transparent);color:var(--on-accent);background:none">⌘N</span></button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 14 WORKBENCH ================= -->
+<section id="s14">
+  <div class="sec-h"><span class="no">14</span><h2>工作台合成 · Workbench</h2></div>
+  <p class="sec-d">整套语言在真实密度下的合成预览：会话列表 + Trajectory + 变更面板 + Composer + 审批弹窗覆盖层。</p>
+  <div class="wb">
+    <div class="wb-titlebar">
+      <div class="logo" style="width:20px;height:20px;font-size:11px">书</div>
+      <span style="font-size:12.5px;font-weight:600">Web 重皮 · token 体系迁移</span>
+      <span class="badge bd-accent" style="font-size:10px;padding:2px 7px"><span class="dot d-accent pulse" style="width:6px;height:6px"></span>running</span>
+      <span style="flex:1"></span>
+      <span class="lbl" style="font-size:10px">seq 0187</span>
+      <span class="kbd" style="font-size:10px">⌘K</span>
+    </div>
+    <div class="wb-body">
+      <aside class="wb-side">
+        <div class="search" style="display:flex;align-items:center;gap:8px;background:var(--bg-inset);border:1px solid var(--line-2);border-radius:var(--r-sm);padding:5px 9px;color:var(--text-3);margin-bottom:4px"><span style="font-size:11px;display:flex"><svg class="ic sm"><use href="#i-find"/></svg></span><span style="font-size:12px">搜索会话…</span></div>
+        <div class="sgroup" style="padding:8px 6px 2px"><span class="lbl" style="color:var(--accent)">pinned</span></div>
+        <div class="sitem pin sel" style="padding:7px 9px"><span class="st dot d-accent pulse" style="width:7px;height:7px"></span><div class="body"><div class="ttl" style="font-size:12.5px">Web 重皮 · token 迁移</div><div class="meta">2m · $0.083</div></div></div>
+        <div class="sgroup" style="padding:8px 6px 2px"><span class="lbl">running</span></div>
+        <div class="sitem" style="padding:7px 9px"><span class="st dot d-accent pulse" style="width:7px;height:7px"></span><div class="body"><div class="ttl" style="font-size:12.5px">e2e 回归 rewind</div><div class="meta">now</div></div></div>
+        <div class="sitem" style="padding:7px 9px"><span class="st dot d-warn pulse" style="width:7px;height:7px"></span><div class="body"><div class="ttl" style="font-size:12.5px">迁移脚本待审批</div><div class="meta">8m</div></div></div>
+        <div class="sgroup" style="padding:8px 6px 2px"><span class="lbl">idle</span></div>
+        <div class="sitem" style="padding:7px 9px"><span class="st dot d-idle" style="width:7px;height:7px"></span><div class="body"><div class="ttl" style="font-size:12.5px">Bento 看板调研</div><div class="meta">3h</div></div></div>
+      </aside>
+      <main class="wb-main">
+        <div class="wb-traj">
+          <div style="display:flex;align-items:center;gap:10px;padding:2px 0 10px">
+            <span class="lbl">checkpoint · turn 24</span><span style="flex:1;height:1px;background:var(--line-1)"></span><span class="lbl">seq 0186</span>
+          </div>
+          <div class="msg-user"><div class="bubble" style="font-size:13px">@composer.tsx 把模式切换改成分段控件，跑一遍构建</div></div>
+          <div class="msg-a" style="font-size:13px">
+            <p style="color:var(--text-2)">改造完成。模式切换现在是分段控件，构建通过。</p>
+          </div>
+          <div class="tc" onclick="this.classList.toggle('open')" style="margin:10px 0">
+            <div class="tc-h"><span class="dot d-success"></span><span class="tool">EDIT</span><span class="target">apps/web/src/components/composer.tsx</span><span class="t">18ms</span><span class="chev">▶</span></div>
+            <div class="tc-b"><pre><span class="cm">str_replace · 2 处</span>
+<span style="color:var(--danger)">- <ModeToggle variant="pill" /></span>
+<span style="color:var(--success)">+ <ModeSeg options={["Build","Plan"]} /></span></pre><div class="result"><b>+6 −4</b> · 已过审</div></div>
+          </div>
+          <div class="tc" onclick="this.classList.toggle('open')" style="margin:10px 0">
+            <div class="tc-h"><span class="dot d-success"></span><span class="tool">BASH</span><span class="target">pnpm --filter web build</span><span class="t">412ms</span><span class="chev">▶</span></div>
+            <div class="tc-b"><pre><span class="s">✓ built in 412ms</span></pre><div class="result">exit <b>0</b></div></div>
+          </div>
+          <div class="msg-a" style="font-size:13px">
+            <p>构建通过。变更已在右侧面板，等待逐文件审查。</p>
+            <div class="msg-acts"><button class="icon-btn" title="编辑重发"><svg class="ic"><use href="#i-pen"/></svg></button><button class="icon-btn" title="回滚到此"><svg class="ic"><use href="#i-rw"/></svg></button><button class="icon-btn" title="从此分叉"><svg class="ic"><use href="#i-fork"/></svg></button></div>
+          </div>
+        </div>
+        <div class="wb-comp">
+          <div class="composer" style="background:var(--bg-2)">
+            <textarea rows="1" placeholder="描述任务… @ 文件 · / 命令"></textarea>
+            <div class="comp-f" style="padding:6px 10px 8px">
+              <div class="seg"><button class="on">Build</button><button>Plan</button></div>
+              <button class="model-pick">glm-5.3 ▾</button>
+              <span style="flex:1"></span>
+              <button class="send" style="width:30px;height:30px" title="发送"><svg class="ic"><use href="#i-send"/></svg></button>
+            </div>
+            <div class="usage" style="padding:5px 12px"><span>in 12.4k</span><span>out 3.2k</span><span>$0.0831</span><span class="u-ctx" style="color:var(--text-2)">ctx 43%</span><div class="bar"><i style="width:43%"></i></div></div>
+          </div>
+        </div>
+      </main>
+      <aside class="wb-right">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 14px 8px">
+          <span style="font-size:13px;font-weight:600">变更审查</span>
+          <span style="flex:1"></span><span class="lbl">2 files</span>
+        </div>
+        <div style="padding:0 10px 10px;display:flex;flex-direction:column;gap:8px">
+          <div class="diff">
+            <div class="diff-f" style="padding:7px 10px">
+              <span class="path" style="font-size:11px"><b>composer.tsx</b></span>
+              <span class="add">+6</span><span class="del">−4</span>
+              <button class="btn sm b-primary" style="height:24px;padding:0 9px;font-size:11px">Accept</button>
+            </div>
+            <div class="diff-l l-add"><span class="ln">88</span><span class="code" style="font-size:11px">+ &lt;ModeSeg options={["Build","Plan"]} /&gt;</span></div>
+            <div class="diff-l l-del"><span class="ln">89</span><span class="code" style="font-size:11px">- &lt;ModeToggle variant="pill" /&gt;</span></div>
+          </div>
+          <div class="diff">
+            <div class="diff-f" style="padding:7px 10px">
+              <span class="path" style="font-size:11px"><b>globals.css</b></span>
+              <span class="add">+12</span><span class="del">−3</span>
+              <button class="btn sm b-secondary" style="height:24px;padding:0 9px;font-size:11px">Revert</button>
+            </div>
+            <div class="diff-l l-add"><span class="ln">50</span><span class="code" style="font-size:11px">+ --radius: 0.5rem;</span></div>
+          </div>
+        </div>
+      </aside>
+    </div>
+    <div class="wb-overlay" onclick="this.style.display='none'">
+      <div class="appr" onclick="event.stopPropagation()">
+        <div class="appr-h"><span class="dot d-warn pulse"></span><h3 style="font-size:15px">审批请求 · bash</h3><span class="lbl" style="color:var(--warn)">awaiting</span></div>
+        <div class="appr-cmd" style="margin:12px 18px;max-height:110px">$ pnpm dlx playwright install --with-deps <span class="p">chromium</span></div>
+        <div class="appr-f" style="padding:12px 18px">
+          <button class="btn md b-primary" style="height:32px">批准</button>
+          <button class="btn md b-destructive" style="height:32px">拒绝</button>
+          <span style="flex:1"></span>
+          <button class="btn md b-ghost" style="height:32px">放行 pnpm*</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="spec">点击遮罩可关闭审批弹窗预览 · 布局：236px 侧栏 + 弹性主区 + 296px 右面板 · 支持双 pane 对比与预览面板（v0.4 F10）复用同一 token</div>
+</section>
+
+<!-- ================= 15 PREMIUM POLISH ================= -->
+<section id="s15">
+  <div class="sec-h"><span class="no">15</span><h2>高级感细节 · Premium Polish</h2></div>
+  <p class="sec-d">高级感 = 克制（01 色彩收敛）× 精确（本节工程细节）× 生命感（动效与流式）。单个细节低于感知阈值，叠加后构成"昂贵"的直觉。本页已全局应用：卡片顶光、细滚动条、噪点触感层、tabular 数字、饱和毛玻璃。</p>
+  <div class="grid g2">
+    <div>
+      <div class="lbl" style="margin-bottom:8px">a · 数字读数 — tabular-nums</div>
+      <div style="border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:14px 16px">
+        <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-3)"><span>proportional（宽度抖动）</span><span>tabular（定宽不抖）</span></div>
+        <div style="display:flex;justify-content:space-between;font-family:var(--font-sans);font-size:22px;font-weight:600;margin:8px 0 10px">
+          <span class="cnt">$0.00</span><span class="cnt tnum">$0.00</span>
+        </div>
+        <button class="btn sm b-secondary" onclick="runCounter()">重放计数</button>
+      </div>
+      <div class="spec">流式 token / 成本读数必须 tabular——数字跳动而版式纹丝不动，是"仪器"与"网页"的分界线</div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">b · 卡片顶光 — machined edge</div>
+      <div style="display:flex;gap:10px">
+        <div style="flex:1;border:1px solid var(--line-2);border-radius:var(--r-sm);background:var(--bg-2);padding:12px 14px">
+          <div style="font-size:13px">flat · 平面卡片</div><div class="spec" style="margin-top:2px">border only</div>
+        </div>
+        <div style="flex:1;border:1px solid var(--line-2);border-radius:var(--r-sm);background:var(--bg-2);padding:12px 14px;box-shadow:inset 0 1px 0 rgba(255,255,255,.05)">
+          <div style="font-size:13px">lift · 顶光卡片</div><div class="spec" style="margin-top:2px">+ inset 顶边 1px 高光</div>
+        </div>
+      </div>
+      <div class="spec">Linear 签名：暗色卡片顶部 1px 内发光模拟受光面——已应用于全页工具卡 / 弹窗 / 输入区；light 主题换为底边 1px 落影</div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="lbl">c · 列表入场 — stagger</span><button class="btn sm b-ghost" onclick="replayStag('stag1')">重放</button></div>
+      <div id="stag1" class="stag run" style="display:flex;flex-direction:column;gap:6px">
+        <div class="sitem" style="--i:0;padding:6px 10px"><span class="st dot d-idle"></span><div class="body"><div class="ttl" style="font-size:12.5px">e2e 回归：rewind 三模式</div><div class="meta">just now</div></div></div>
+        <div class="sitem" style="--i:1;padding:6px 10px"><span class="st dot d-warn pulse"></span><div class="body"><div class="ttl" style="font-size:12.5px">迁移脚本 · 等待 bash 审批</div><div class="meta">8m</div></div></div>
+        <div class="sitem" style="--i:2;padding:6px 10px"><span class="st dot d-idle"></span><div class="body"><div class="ttl" style="font-size:12.5px">Bento 看板调研</div><div class="meta">3h</div></div></div>
+        <div class="sitem" style="--i:3;padding:6px 10px"><span class="st dot d-danger"></span><div class="body"><div class="ttl" style="font-size:12.5px">部署脚本修复</div><div class="meta">yesterday · exit 1</div></div></div>
+      </div>
+      <div class="spec">每项 +45ms / 位移 4px / 320ms——低于刻意感知阈值，但构成"呼吸感"；遵守 prefers-reduced-motion</div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">d · 安静滚动条 — quiet scrollbar</div>
+      <div class="scroll-box">
+        <p>scrollbar-width: thin</p>
+        <p>::-webkit-scrollbar-thumb {</p>
+        <p>&nbsp;&nbsp;border: 3px solid transparent;</p>
+        <p>&nbsp;&nbsp;background-clip: padding-box;</p>
+        <p>&nbsp;&nbsp;border-radius: 999px;</p>
+        <p>}</p>
+        <p>// hover 时才加深到 line-3</p>
+        <p>// 轨道永远透明，内容不被切割</p>
+        <p>// 视觉宽度 4px，命中宽度 10px</p>
+      </div>
+      <div class="spec">系统默认滚动条是页面里最大的"塑料感"来源；细而钝的滚动条是编辑器气质（本页已全局应用）</div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">e · 流式光标 — caret as metronome</div>
+      <div style="border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:14px 16px;font-size:13.5px;line-height:1.7">
+        <span style="color:var(--text-2)">已读取 composer.tsx，接下来替换模式切换为分段控件</span><span class="caret"></span>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;max-width:300px">
+          <div class="shimmer-line" style="width:92%"></div>
+          <div class="shimmer-line" style="width:68%"></div>
+        </div>
+      </div>
+      <div class="spec">光标 2px / steps(1) 硬切换——模拟终端而非渐显动画；与 shimmer 同源（信号，非表演）</div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">f · 焦点环 — double ring</div>
+      <div style="display:flex;gap:14px;align-items:center;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:18px 16px">
+        <button class="btn md b-secondary ring-cheap">廉价单环 2px</button>
+        <button class="btn md b-secondary ring-rich">双层环 1px + 4px</button>
+      </div>
+      <div class="spec">内层 1px 遮断环（bg-0 色隔离控件描边）+ 外层 4px accent-ring——锐利不糊，键盘导航的可信度来源</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;margin-top:20px;padding:14px 16px;border:1px dashed var(--line-2);border-radius:var(--r-md)">
+    <span class="lbl" style="color:var(--accent)">g</span>
+    <span style="font-size:13px;color:var(--text-2)">触感层 — 全页覆盖 2.8% 噪点（feTurbulence），消除大面积纯色的"数字塑料感"，模拟纸面纤维；light 主题 4%。</span>
+  </div>
+</section>
+
+<!-- ================= 16 ACCENT EXPLORER ================= -->
+<section id="s16">
+  <div class="sec-h"><span class="no">16</span><h2>品牌色探索 · Accent Explorer</h2></div>
+  <p class="sec-d">v2 默认朱砂——类别（AI 工具）几乎无人用暖红作交互色，且自带"印章"叙事；茜红/藤黄/石绿/群青语义已固定不再随品牌色浮动。真正的命题仍是"能否<b>拥有</b>一个颜色"= 稀缺 × 纪律 × 叙事。点击卡片，<b>整页实时换肤</b>。</p>
+  <div class="grid g4">
+    <div class="acc-card on" id="acc-cinnabar">
+      <div class="acc-chip" style="background:#d64730"></div>
+      <span class="acc-name lbl">朱砂 · cinnabar</span>
+      <span class="acc-hex">#d64730 · hue 11°</span>
+      <p>印泥之色，水墨上唯一的红。类别稀缺 × 叙事契合双满——「盖印即批准」是本设计语言的签名动作。</p>
+      <button class="btn sm b-secondary" onclick="applyAccent('cinnabar')">换上试试</button>
+    </div>
+    <div class="acc-card" id="acc-azure">
+      <div class="acc-chip" style="background:linear-gradient(135deg,#8ab4d9,#c6dcEC)"></div>
+      <span class="acc-name lbl">天青 · ru azure</span>
+      <span class="acc-hex">#8ab4d9 · hue 208°</span>
+      <p>「雨过天青云破处」——汝窑釉色。冷静克制，气质如瓷；深色下按钮配墨字（瓷面感）。风险：接近默认蓝。</p>
+      <button class="btn sm b-secondary" onclick="applyAccent('azure')">换上试试</button>
+    </div>
+    <div class="acc-card" id="acc-azurite">
+      <div class="acc-chip" style="background:#6e6cf6"></div>
+      <span class="acc-name lbl">青金 · v1 靛蓝</span>
+      <span class="acc-hex">#6e6cf6 · hue 241°</span>
+      <p>v1 品牌资产回归选项。类别最拥挤（Linear 同族），高级感只能靠纪律赢。</p>
+      <button class="btn sm b-secondary" onclick="applyAccent('azurite')">换上试试</button>
+    </div>
+    <div class="acc-card" id="acc-soot">
+      <div class="acc-chip" style="background:linear-gradient(135deg,#e9e6df,#8f8a80)"></div>
+      <span class="acc-name lbl">松烟 · soot</span>
+      <span class="acc-hex">#e9e6df · achromatic</span>
+      <p>松烟墨无彩度路线：墨即是品牌，理论上限最高。代价：进行中信号弱化，链接需群青辅助。</p>
+      <button class="btn sm b-secondary" onclick="applyAccent('soot')">换上试试</button>
+    </div>
+  </div>
+  <div class="acc-strip">
+    <button class="btn md b-primary">批准执行</button>
+    <button class="send" title="发送">↑</button>
+    <span class="badge bd-accent"><span class="dot d-accent pulse"></span>running</span>
+    <span class="badge bd-warn"><span class="dot d-warn"></span>awaiting</span>
+    <a href="#s16" onclick="return false">链接样式</a>
+    <span class="lbl" style="color:var(--accent)">label-mono accent</span>
+    <span style="flex:1"></span>
+    <span class="spec" style="margin:0">↑ 换色后立即在此与 03 / 06 / 10 / 14 节查看整体效果 · 主题切换自动重配</span>
+  </div>
+</section>
+
+<!-- ================= 17 APP SHELL ================= -->
+<section id="s17">
+  <div class="sec-h"><span class="no">17</span><h2>应用框架 · App Shell</h2></div>
+  <p class="sec-d">单一外壳承载全部功能：无顶部导航栏，左侧会话列表是唯一常驻导航，⌘K 命令面板是全局菜单。主区 Trajectory 是事件日志的投影，右面板可关闭可替换（变更 / 预览 / 待办）。</p>
+  <div class="shellbox">
+    <div class="sh-title">
+      <span class="lbl" style="color:var(--accent)">titlebar · 40px</span>
+      <span style="font-size:12px;color:var(--text-3)">logo / 会话标题 / 状态徽章 / seq 读数 / ⌘K</span>
+    </div>
+    <div class="sh-body">
+      <div class="sh-region" style="width:230px;background:var(--bg-1)">
+        <span class="lbl" style="color:var(--text-2)">sidebar</span>
+        <span style="font-size:12px;color:var(--text-3)">会话列表 · 分组 · 搜索<br>模型 / 代理入口（底部）</span>
+        <span class="dim">236–280px</span>
+      </div>
+      <div class="sh-region" style="flex:1">
+        <span class="lbl" style="color:var(--text-2)">main · trajectory</span>
+        <span style="font-size:12px;color:var(--text-3)">事件流投影：消息 / 工具卡 / 标记<br>body-dense 13px · 滚动锚定底部</span>
+        <span class="dim">flex · min 480px</span>
+        <span class="dim" style="margin-top:4px">composer 底部常驻 · auto 高度</span>
+      </div>
+      <div class="sh-region" style="width:250px;background:var(--bg-1)">
+        <span class="lbl" style="color:var(--text-2)">right panel</span>
+        <span style="font-size:12px;color:var(--text-3)">tabs：变更 / 预览 / 待办<br>可关闭 · 可拖宽</span>
+        <span class="dim">296–420px</span>
+      </div>
+    </div>
+  </div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="tbl"><table>
+      <thead><tr><th>区域</th><th>尺寸</th><th>行为</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">titlebar</td><td class="num">40px</td><td>固定；双击折叠侧栏</td></tr>
+        <tr><td class="mono">sidebar</td><td class="num">236–280</td><td>可折叠至 0（⌘B）；分栏对比时共享</td></tr>
+        <tr><td class="mono">main</td><td class="num">flex</td><td>双 pane 对比时 50/50 分割（v0.3 双会话）</td></tr>
+        <tr><td class="mono">right</td><td class="num">296–420</td><td>Resizable；预览面板地址栏按会话记忆</td></tr>
+        <tr><td class="mono">composer</td><td class="num">auto</td><td>多行增长，最大 40vh；Esc 清空 / 打断</td></tr>
+      </tbody>
+    </table></div>
+    <div>
+      <div class="grid g3">
+        <div><div class="mini"><div class="m-bar"></div><div class="m-body"><div class="m-c" style="width:26%;background:var(--bg-1)"></div><div class="m-c" style="flex:1"></div></div></div><div class="mini-lbl">默认 · 单栏</div></div>
+        <div><div class="mini"><div class="m-bar"></div><div class="m-body"><div class="m-c" style="width:22%;background:var(--bg-1)"></div><div class="m-c" style="flex:1;border-right:1px dashed var(--line-3)"></div><div class="m-c" style="flex:1"></div></div></div><div class="mini-lbl">双栏对比</div></div>
+        <div><div class="mini"><div class="m-bar"></div><div class="m-body"><div class="m-c" style="width:26%;background:var(--bg-1)"></div><div class="m-c" style="flex:1"></div><div class="m-c" style="width:34%;background:var(--bg-1)"></div></div></div><div class="mini-lbl">右面板 · 预览</div></div>
+      </div>
+      <div class="spec" style="margin-top:14px">导航原则：命令面板优先（⌘K 一个入口覆盖全部动作），菜单与右键是鼠标用户的等价物；外壳状态三态——idle / running（titlebar 徽章 pulse）/ awaiting（审批弹窗浮层）</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 18 MENUS ================= -->
+<section id="s18">
+  <div class="sec-h"><span class="no">18</span><h2>菜单 · Menus</h2></div>
+  <p class="sec-d">浮层统一规格：bg-3 + line-2 + shadow-pop + r-lg；条目 32px、图标 16px、快捷键右对齐；分组用 label-mono + 分隔线；破坏性操作独立成组且 danger 色。</p>
+  <div class="grid g2">
+    <div>
+      <div class="lbl" style="margin-bottom:8px">下拉菜单 · titlebar ⚙ / 会话项 ⋯</div>
+      <div class="menu">
+        <span class="lbl">会话</span>
+        <div class="mi"><svg class="ic"><use href="#i-plus"/></svg>新会话<span class="kb kbd">⌘N</span></div>
+        <div class="mi"><svg class="ic"><use href="#i-copy"/></svg>复制会话</div>
+        <div class="mi"><svg class="ic"><use href="#i-pen"/></svg>重命名</div>
+        <div class="msep"></div>
+        <span class="lbl">显示</span>
+        <div class="mi"><svg class="ic"><use href="#i-theme"/></svg>切换主题</div>
+        <div class="mi"><svg class="ic"><use href="#i-layer"/></svg>分栏对比<span class="kb kbd">⌘⇧D</span></div>
+        <div class="msep"></div>
+        <div class="mi danger"><svg class="ic"><use href="#i-trash"/></svg>删除会话</div>
+      </div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">上下文菜单 · 消息右键（trajectory）</div>
+      <div class="menu">
+        <span class="lbl">seq 0186 · 用户消息</span>
+        <div class="mi"><svg class="ic"><use href="#i-pen"/></svg>编辑重发<span class="kb kbd">E</span></div>
+        <div class="mi"><svg class="ic"><use href="#i-rw"/></svg>回滚到此<span class="kb kbd">⌘⇧R</span></div>
+        <div class="mi"><svg class="ic"><use href="#i-fork"/></svg>从此分叉</div>
+        <div class="msep"></div>
+        <div class="mi"><svg class="ic"><use href="#i-copy"/></svg>复制文本<span class="kb kbd">⌘C</span></div>
+        <div class="mi"><svg class="ic"><use href="#i-find"/></svg>引用此消息</div>
+      </div>
+      <div class="spec">打开动画 140ms fade + 2px rise；Esc / 点击外部关闭；键盘 ↑↓ 导航 ⏎ 确认——与命令面板同一交互内核</div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 19 FORMS ================= -->
+<section id="s19">
+  <div class="sec-h"><span class="no">19</span><h2>表单与控件 · Forms</h2></div>
+  <p class="sec-d">标签 12.5/500 置于控件上方；控件高 36（紧凑 30）；焦点双层环（§15f）；错误 = danger 边 + mono 错误文案；帮助文案 text-3 11.5px。</p>
+  <div class="grid g2">
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div>
+        <label class="f-label">会话名称</label>
+        <input class="inp" value="Web 重皮 · token 迁移">
+        <div class="f-help">显示在会话列表与 titlebar</div>
+      </div>
+      <div>
+        <label class="f-label">搜索文件 · @ 引用</label>
+        <div class="inp-wrap">
+          <span class="lead"><svg class="ic sm"><use href="#i-find"/></svg></span>
+          <input class="inp" placeholder="输入文件名，⏎ 展开">
+          <span class="tail kbd">⏎</span>
+        </div>
+      </div>
+      <div>
+        <label class="f-label">默认模型</label>
+        <div class="sel-wrap">
+          <input class="inp" value="glm-5.3 · zhipuai · 200k ctx" readonly>
+          <span class="chev"><svg class="ic sm"><use href="#i-cd"/></svg></span>
+        </div>
+      </div>
+      <div>
+        <label class="f-label">重命名（校验错误态）</label>
+        <input class="inp err" value="Web 重皮">
+        <div class="f-err">E409 · 同名会话已存在</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px">
+      <div>
+        <label class="f-label">审批备注（可选）</label>
+        <textarea class="inp tarea" placeholder="附加给下次审计的说明…">跳过 playwright 缓存重建，直接安装 chromium。</textarea>
+      </div>
+      <div>
+        <label class="f-label">沙箱级别</label>
+        <div style="display:flex;flex-direction:column;gap:9px">
+          <span class="ck-row"><span class="rd"></span>只读</span>
+          <span class="ck-row"><span class="rd on"></span>工作区可写（默认）</span>
+          <span class="ck-row"><span class="rd"></span>完全访问</span>
+        </div>
+        <div class="f-help">fail-closed：bash 始终逐条审批，不受级别影响</div>
+      </div>
+      <div class="grid g2">
+        <div>
+          <label class="f-label">通知</label>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <span class="ck-row" style="justify-content:space-between">turn 完成提示音<span class="sw-toggle on"><i></i></span></span>
+            <span class="ck-row" style="justify-content:space-between">系统通知<span class="sw-toggle on"><i></i></span></span>
+            <span class="ck-row" style="justify-content:space-between">自动置顶运行中会话<span class="sw-toggle"><i></i></span></span>
+          </div>
+        </div>
+        <div>
+          <label class="f-label">记住规则</label>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <span class="ck-row"><span class="ck on"><svg class="ic" style="width:11px;height:11px"><use href="#i-ok"/></svg></span><code style="font-size:11px">bash:pnpm test*</code></span>
+            <span class="ck-row"><span class="ck on"><svg class="ic" style="width:11px;height:11px"><use href="#i-ok"/></svg></span><code style="font-size:11px">bash:pnpm build*</code></span>
+            <span class="ck-row"><span class="ck"></span>记忆文件直编（MD）</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="f-label">禁用态</label>
+        <input class="inp" value="会话运行中不可重命名" disabled>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 20 DATA DISPLAY ================= -->
+<section id="s20">
+  <div class="sec-h"><span class="no">20</span><h2>数据展示 · Data & Navigation</h2></div>
+  <p class="sec-d">表格右列全部 mono + tabular（§15a）；树视图用于 @ 引用与变更面板（缩进参考线 1px）；下划线 tabs 承载右面板切换；callout 只用于跨组件的系统性提示。</p>
+  <div class="grid g2" style="align-items:start">
+    <div>
+      <div class="lbl" style="margin-bottom:8px">tabs · 右面板</div>
+      <div class="tabs" style="margin-bottom:14px">
+        <span class="tab on">变更 <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--accent)">2</span></span>
+        <span class="tab">预览</span>
+        <span class="tab">待办</span>
+      </div>
+      <div class="lbl" style="margin-bottom:8px">table · 模型管理</div>
+      <div class="tbl"><table>
+        <thead><tr><th>模型</th><th>上下文</th><th>成本/M</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="mono">glm-5.3 <span class="dim" style="font-family:var(--font-mono);font-size:9.5px;padding:1px 6px">默认</span></td><td class="num">200k</td><td class="num">$1.80</td><td><span class="dot d-success" style="display:inline-block;vertical-align:middle"></span></td></tr>
+          <tr><td class="mono">glm-5.3-air</td><td class="num">128k</td><td class="num">$0.35</td><td><span class="dot d-idle" style="display:inline-block;vertical-align:middle"></span></td></tr>
+          <tr><td class="mono">gpt-5.5-mini</td><td class="num">128k</td><td class="num">$0.42</td><td><span class="dot d-idle" style="display:inline-block;vertical-align:middle"></span></td></tr>
+          <tr><td class="mono">claude-opus-4.6</td><td class="num">200k</td><td class="num">$3.00</td><td><span class="dot d-danger" style="display:inline-block;vertical-align:middle"></span></td></tr>
+        </tbody>
+      </table></div>
+      <div class="spec">danger 点 = API key 缺失 · 行 hover bg-1 · 数字列右对齐 tabular</div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">tree · @ 文件引用（前 20 条）</div>
+      <div class="tree">
+        <div class="tn"><span class="chev"><svg class="ic" style="width:11px;height:11px"><use href="#i-cd"/></svg></span><svg class="ic"><use href="#i-dir"/></svg>shuyi-harness</div>
+        <div class="tnest">
+          <div class="tn"><span class="chev"><svg class="ic" style="width:11px;height:11px"><use href="#i-cd"/></svg></span><svg class="ic"><use href="#i-dir"/></svg>apps</div>
+          <div class="tnest">
+            <div class="tn"><span class="chev"><svg class="ic" style="width:11px;height:11px"><use href="#i-cd"/></svg></span><svg class="ic"><use href="#i-dir"/></svg>web/src</div>
+            <div class="tnest">
+              <div class="tn"><span class="chev"></span><svg class="ic"><use href="#i-dir"/></svg>components</div>
+              <div class="tn hit"><span class="chev"></span><svg class="ic"><use href="#i-file"/></svg>composer.tsx</div>
+              <div class="tn"><span class="chev"></span><svg class="ic"><use href="#i-file"/></svg>app.tsx</div>
+            </div>
+          </div>
+          <div class="tn"><span class="chev"><svg class="ic" style="width:11px;height:11px"><use href="#i-cd"/></svg></span><svg class="ic"><use href="#i-dir"/></svg>packages</div>
+          <div class="tnest">
+            <div class="tn"><span class="chev"></span><svg class="ic"><use href="#i-dir"/></svg>ui</div>
+            <div class="tn hit"><span class="chev"></span><svg class="ic"><use href="#i-file"/></svg>globals.css</div>
+          </div>
+        </div>
+      </div>
+      <div class="lbl" style="margin:16px 0 8px">callouts</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="callout c-info"><svg class="ic sm"><use href="#i-find"/></svg><span><span class="t">12 个文件</span>匹配 "startTurn"（0.38s）</span></div>
+        <div class="callout c-success"><svg class="ic sm"><use href="#i-ok"/></svg><span><span class="t">回滚完成</span> · 仅代码，12 个文件已恢复</span></div>
+        <div class="callout c-warn"><svg class="ic sm"><use href="#i-clock"/></svg><span><span class="t">上下文 87%</span> · 下一轮触发结构化压缩</span></div>
+        <div class="callout c-danger"><svg class="ic sm"><use href="#i-x"/></svg><span><span class="t">构建失败</span> · exit 1，见上方工具卡片</span></div>
+      </div>
+      <div class="lbl" style="margin:16px 0 8px">breadcrumb</div>
+      <div class="crumb"><span>设置</span><svg class="ic"><use href="#i-cr"/></svg><span>权限</span><svg class="ic"><use href="#i-cr"/></svg><b>bash 规则</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 21 ICONS ================= -->
+<section id="s21">
+  <div class="sec-h"><span class="no">21</span><h2>图标系统 · Iconography</h2></div>
+  <p class="sec-d">自绘 16px 网格线条图标（lucide 规格）：1.5px 描边、圆帽圆角、currentColor 单色、viewBox 恒 16（描边随尺寸光学缩放）。落地直接采用 lucide-react，缺口自绘补齐。本页已全部替换占位字符。</p>
+  <div class="lbl" style="margin-bottom:8px">工具 · tools</div>
+  <div class="grid g6" style="margin-bottom:18px">
+    <div class="icell"><svg class="ic lg"><use href="#i-doc"/></svg><span class="n">read</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-pen"/></svg><span class="n">write·edit</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-term"/></svg><span class="n">bash</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-star"/></svg><span class="n">glob</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-find"/></svg><span class="n">grep</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-todo"/></svg><span class="n">todo</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-web"/></svg><span class="n">web</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-qa"/></svg><span class="n">question</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-task"/></svg><span class="n">task</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-layer"/></svg><span class="n">queue</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-clock"/></svg><span class="n">耗时</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-zap"/></svg><span class="n">模型</span></div>
+  </div>
+  <div class="lbl" style="margin-bottom:8px">动作 · actions</div>
+  <div class="grid g6" style="margin-bottom:18px">
+    <div class="icell"><svg class="ic lg"><use href="#i-send"/></svg><span class="n">发送</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-stop"/></svg><span class="n">停止</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-rw"/></svg><span class="n">回滚</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-fork"/></svg><span class="n">分叉</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-pin"/></svg><span class="n">置顶</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-pen"/></svg><span class="n">编辑</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-copy"/></svg><span class="n">复制</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-ok"/></svg><span class="n">批准</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-x"/></svg><span class="n">拒绝</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-plus"/></svg><span class="n">新建</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-trash"/></svg><span class="n">删除</span></div>
+    <div class="icell"><svg class="ic lg"><use href="#i-ar"/></svg><span class="n">发送至</span></div>
+  </div>
+  <div class="grid g2">
+    <div>
+      <div class="lbl" style="margin-bottom:8px">尺寸与描边 ramp</div>
+      <div style="display:flex;align-items:flex-end;gap:28px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:18px 22px">
+        <div style="text-align:center"><svg class="ic sm"><use href="#i-term"/></svg><div class="spec" style="margin-top:8px">14 · stroke 1.31</div></div>
+        <div style="text-align:center"><svg class="ic"><use href="#i-term"/></svg><div class="spec" style="margin-top:8px">16 · stroke 1.5</div></div>
+        <div style="text-align:center"><svg class="ic lg"><use href="#i-term"/></svg><div class="spec" style="margin-top:8px">20 · stroke 1.88</div></div>
+        <div style="text-align:center"><svg class="ic lg" style="width:24px;height:24px"><use href="#i-term"/></svg><div class="spec" style="margin-top:8px">24 · 空状态</div></div>
+      </div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">使用规则</div>
+      <div style="border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:14px 18px;font-size:12.5px;color:var(--text-2);line-height:1.9">
+        图标 + 文字间距恒定 <b>8px</b>；纯图标按钮 30×30 必配 tooltip · 工具卡头部用 mono 文字名（BASH/EDIT）不用图标——读数是文字，动作是图标 · 禁止填充/线性混排 · 禁止彩色图标（色彩即信号原则，§2 铁律 1）· 菜单图标 text-3，hover 提亮
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer style="border-top:1px solid var(--line-1);padding-top:24px;display:flex;align-items:center;gap:14px">
+  <div class="logo" style="width:20px;height:20px;font-size:10px">书</div>
+  <span class="lbl">墨仪 · ink instrument · v2 · 2026-10-07</span>
+  <span style="flex:1"></span>
+  <span class="lbl" style="text-transform:none;letter-spacing:0">配套文档：编码智能体-UI设计语言提案-v2.md · 前版：v1（静谧仪器）</span>
+</footer>
+
+</div>
+
+<script>
+/* ---------- accent explorer ---------- */
+const ACCENTS = {
+  cinnabar: {
+    dark: { accent:'#d64730', hover:'#e4654e', active:'#bf3b25', soft:'rgba(214,71,48,.14)', ring:'rgba(214,71,48,.45)', on:'#ffffff', grad:'linear-gradient(135deg,#d64730,#d64730)' },
+    light: { accent:'#b23415', hover:'#9c2d11', active:'#c64425', soft:'rgba(178,52,21,.10)', ring:'rgba(178,52,21,.40)', on:'#ffffff', grad:'linear-gradient(135deg,#b23415,#b23415)' },
+    warn: null,
+  },
+  azure: {
+    dark: { accent:'#8ab4d9', hover:'#a3c5e2', active:'#75a3c8', soft:'rgba(138,180,217,.15)', ring:'rgba(138,180,217,.45)', on:'#101c28', grad:'linear-gradient(135deg,#8ab4d9,#8ab4d9)' },
+    light: { accent:'#2e6ea6', hover:'#255d8e', active:'#3a7cb4', soft:'rgba(46,110,166,.10)', ring:'rgba(46,110,166,.40)', on:'#ffffff', grad:'linear-gradient(135deg,#2e6ea6,#2e6ea6)' },
+    warn: null,
+  },
+  azurite: {
+    dark: { accent:'#6e6cf6', hover:'#7f7df8', active:'#5d5bf0', soft:'rgba(110,108,246,.13)', ring:'rgba(110,108,246,.45)', on:'#ffffff', grad:'linear-gradient(135deg,#6e6cf6,#8f7bf9)' },
+    light: { accent:'#5856ea', hover:'#4745d8', active:'#6a68f0', soft:'rgba(88,86,234,.10)', ring:'rgba(88,86,234,.40)', on:'#ffffff', grad:'linear-gradient(135deg,#5856ea,#8f7bf9)' },
+    warn: null,
+  },
+  soot: {
+    dark: { accent:'#e9e6df', hover:'#ffffff', active:'#d5d1c7', soft:'rgba(233,230,223,.10)', ring:'rgba(233,230,223,.35)', on:'#0f0e0d', grad:'linear-gradient(135deg,#e9e6df,#e9e6df)' },
+    light: { accent:'#211f1c', hover:'#000000', active:'#3a3730', soft:'rgba(33,31,28,.08)', ring:'rgba(33,31,28,.30)', on:'#ffffff', grad:'linear-gradient(135deg,#211f1c,#211f1c)' },
+    warn: null,
+  },
+};
+const WARN_DEFAULT = { dark:['#f5b954','rgba(245,185,84,.12)'], light:['#b7791f','rgba(183,121,31,.12)'] };
+let currentAccent = null; /* 用户显式选择后才记录；null = 纯 CSS 状态 */
+function diag() {
+  const d = document.getElementById('jsdiag');
+  if (!d) return;
+  const sample = () => {
+    const bg = getComputedStyle(document.body).backgroundColor;
+    d.textContent = 'live: theme=' + (document.documentElement.getAttribute('data-theme') || 'dark') + ' bg=' + bg;
+  };
+  sample();
+  setTimeout(sample, 350); /* 延迟二次采样，覆盖异步样式重算 */
+}
+
+function applyAccent(key) {
+  const p = ACCENTS[key];
+  if (!p) return;
+  currentAccent = key;
+  const theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const v = p[theme];
+  const s = document.documentElement.style;
+  s.setProperty('--accent', v.accent);
+  s.setProperty('--accent-hover', v.hover);
+  s.setProperty('--accent-active', v.active);
+  s.setProperty('--accent-soft', v.soft);
+  s.setProperty('--accent-ring', v.ring);
+  s.setProperty('--on-accent', v.on);
+  s.setProperty('--brand-gradient', v.grad);
+  const w = (p.warn || WARN_DEFAULT)[theme];
+  s.setProperty('--warn', w[0]);
+  s.setProperty('--warn-soft', w[1]);
+  for (const k of Object.keys(ACCENTS)) {
+    document.getElementById('acc-' + k)?.classList.toggle('on', k === key);
+  }
+  diag();
+}
+
+function toggleTheme() {
+  const el = document.documentElement;
+  const next = el.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+  el.setAttribute('data-theme', next);
+  const zh = next === 'dark' ? '墨' : '纸';
+  document.getElementById('themeLabel').textContent = zh;
+  document.getElementById('themeIcon').textContent = zh;
+  if (currentAccent) applyAccent(currentAccent); /* 仅在用户选过品牌色时按新主题重配 */
+  diag();
+}
+function replayStag(id) {
+  const el = document.getElementById(id);
+  el.classList.remove('run'); void el.offsetWidth; el.classList.add('run');
+}
+function runCounter() {
+  const ease = p => 1 - Math.pow(1 - p, 3);
+  const from = 11021.07, to = 98764.21, dur = 1600;
+  const els = document.querySelectorAll('.cnt');
+  const t0 = performance.now();
+  const fmt = v => v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  const set = v => { els.forEach(e => { e.textContent = '$' + fmt(v); }); };
+  (function tick(now) {
+    const p = Math.min(1, (now - t0) / dur);
+    set(from + (to - from) * ease(p));
+    if (p < 1) requestAnimationFrame(tick);
+  })(t0);
+  setTimeout(() => set(to), dur + 120); /* 看门狗：后台标签 rAF 节流时兜底终值 */
+}
+runCounter();
+</script>
+</body>
+</html>
