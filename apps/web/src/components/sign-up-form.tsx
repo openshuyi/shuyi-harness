@@ -1,6 +1,6 @@
-import { Button } from "@shuyi-harness/ui/components/button";
-import { Input } from "@shuyi-harness/ui/components/input";
-import { Label } from "@shuyi-harness/ui/components/label";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import { Input } from "@shuyi-harness/ui/components/ui/input";
+import { Label } from "@shuyi-harness/ui/components/ui/label";
 import { useForm } from "@tanstack/react-form";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";

@@ -1,10 +1,10 @@
-import { Button } from "@shuyi-harness/ui/components/button";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@shuyi-harness/ui/components/dropdown-menu";
+} from "@shuyi-harness/ui/components/ui/dropdown-menu";
 import { Moon, Sun } from "lucide-react";
 
 import { useTheme } from "@/components/theme-provider";

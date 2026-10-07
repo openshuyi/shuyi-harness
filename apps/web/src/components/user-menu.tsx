@@ -1,4 +1,4 @@
-import { Button } from "@shuyi-harness/ui/components/button";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,8 +7,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@shuyi-harness/ui/components/dropdown-menu";
-import { Skeleton } from "@shuyi-harness/ui/components/skeleton";
+} from "@shuyi-harness/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@shuyi-harness/ui/components/ui/skeleton";
 import { Link, useNavigate } from "@tanstack/react-router";
 
 import { authClient } from "@/lib/auth-client";

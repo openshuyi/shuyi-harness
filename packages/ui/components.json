@@ -16,9 +16,11 @@
     "utils": "@shuyi-harness/ui/lib/utils",
     "hooks": "@shuyi-harness/ui/hooks",
     "lib": "@shuyi-harness/ui/lib",
-    "ui": "@shuyi-harness/ui/components"
+    "ui": "@shuyi-harness/ui/components/ui"
   },
   "menuColor": "default",
   "menuAccent": "subtle",
-  "registries": {}
+  "registries": {
+    "@ai-elements": "https://ai-sdk.dev/elements/api/registry/{name}.json"
+  }
 }

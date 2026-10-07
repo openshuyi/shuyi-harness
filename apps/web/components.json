@@ -14,7 +14,7 @@
   "aliases": {
     "components": "@/components",
     "utils": "@shuyi-harness/ui/lib/utils",
-    "ui": "@shuyi-harness/ui/components",
+    "ui": "@shuyi-harness/ui/components/ui",
     "lib": "@/lib",
     "hooks": "@/hooks"
   },

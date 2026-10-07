@@ -8,6 +8,10 @@ dist
 build
 *.tsbuildinfo
 
+# ai
+.omo
+.openchamber
+
 # Generated files
 apps/web/src/routeTree.gen.ts
 local.db
