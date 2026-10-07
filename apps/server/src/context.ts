@@ -2,9 +2,9 @@ import type { Context as ApiContext } from "@shuyi-harness/api/context";
 import type { Context as HonoContext } from "hono";
 import { auth, db } from "./services";
 
-export type CreateContextOptions = {
+export interface CreateContextOptions {
 	context: HonoContext;
-};
+}
 
 export async function createContext({
 	context,

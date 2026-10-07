@@ -17,6 +17,7 @@
       "!**/.vscode",
       "!**/routeTree.gen.ts",
       "!**/src-tauri",
+      "!**/src/env.ts",
       "!**/.nuxt",
       "!bts.jsonc",
       "!**/.expo",
@@ -72,7 +73,8 @@
   "javascript": {
     "formatter": {
       "quoteStyle": "double"
-    }
+    },
+    "globals": ["Bun"]
   },
   "css": {
     "parser": {
@@ -97,6 +99,36 @@
           "style": "off",
           "suspicious": "off"
         }
+      }
+    },
+    {
+      "includes": ["apps/tui/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noUnknownAttribute": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "apps/web/src/app.tsx",
+        "apps/web/src/core/**",
+        "apps/web/src/components/session-list.tsx",
+        "apps/web/src/components/trajectory.tsx",
+        "apps/web/src/components/composer.tsx",
+        "apps/web/src/components/approval-dialog.tsx",
+        "apps/web/src/components/error-boundary.tsx"
+      ],
+      "linter": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["apps/server/test/**"],
+      "linter": {
+        "enabled": false
       }
     }
   ],

@@ -1,13 +1,18 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter/relations-v2";
 import type { Database } from "@shuyi-harness/db";
-import * as schema from "@shuyi-harness/db/schema/auth";
+import {
+	account as accountTable,
+	session as sessionTable,
+	user as userTable,
+	verification as verificationTable,
+} from "@shuyi-harness/db/schema/auth";
 import { betterAuth } from "better-auth";
 
-export type AuthConfig = {
-	BETTER_AUTH_URL: string;
+export interface AuthConfig {
 	BETTER_AUTH_SECRET: string;
+	BETTER_AUTH_URL: string;
 	CORS_ORIGIN: string;
-};
+}
 
 export function createAuth(
 	env: AuthConfig,
@@ -25,7 +30,12 @@ export function createAuth(
 		baseURL: env.BETTER_AUTH_URL,
 		database: drizzleAdapter(database, {
 			provider: "sqlite",
-			schema,
+			schema: {
+				account: accountTable,
+				session: sessionTable,
+				user: userTable,
+				verification: verificationTable,
+			},
 		}),
 		emailAndPassword: { enabled: true },
 		plugins: [],

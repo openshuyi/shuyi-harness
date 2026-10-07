@@ -1,21 +1,21 @@
 {
-	"name": "@shuyi-harness/types",
-	"version": "0.3.0",
-	"private": true,
-	"type": "module",
-	"exports": {
-		".": "./src/index.ts",
-		"./events": "./src/events.ts",
-		"./api": "./src/api.ts"
-	},
-	"scripts": {
-		"check-types": "tsc --noEmit"
-	},
-	"dependencies": {
-		"zod": "catalog:"
-	},
-	"devDependencies": {
-		"@shuyi-harness/config": "workspace:*",
-		"typescript": "catalog:"
-	}
+  "name": "@shuyi-harness/types",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./events": "./src/events.ts",
+    "./api": "./src/api.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@shuyi-harness/config": "workspace:*",
+    "typescript": "catalog:"
+  }
 }

@@ -1,4 +1,5 @@
 import { Toaster } from "@shuyi-harness/ui/components/ui/sonner";
+import type { QueryClient } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import {
 	createRootRouteWithContext,
@@ -6,10 +7,8 @@ import {
 	Outlet,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-
 import { ThemeProvider } from "@/components/theme-provider";
-import type { QueryClient } from "@tanstack/react-query";
-import { type orpc } from "@/utils/orpc";
+import type { orpc } from "@/utils/orpc";
 
 import "../index.css";
 

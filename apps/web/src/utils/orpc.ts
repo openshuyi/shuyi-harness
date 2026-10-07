@@ -28,7 +28,7 @@ export const queryClient = createQueryClient();
 
 export const link = new RPCLink({
 	fetch(url, options) {
-		return fetch(url, {
+		return globalThis.fetch(url, {
 			...options,
 			credentials: "include",
 		});

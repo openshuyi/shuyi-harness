@@ -4,49 +4,49 @@
  */
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant" | "tool";
-  content: string;
-  tool_calls?: { id: string; name: string; args: Record<string, unknown> }[];
-  tool_call_id?: string;
+	content: string;
+	role: "system" | "user" | "assistant" | "tool";
+	tool_call_id?: string;
+	tool_calls?: { id: string; name: string; args: Record<string, unknown> }[];
 }
 
 export interface ToolSpec {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
+	description: string;
+	name: string;
+	parameters: Record<string, unknown>;
 }
 
 export interface ChatRequest {
-  model: string;
-  system: string;
-  messages: ChatMessage[];
-  tools: ToolSpec[];
+	messages: ChatMessage[];
+	model: string;
+	system: string;
+	tools: ToolSpec[];
 }
 
 export interface ChatUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  cached_tokens?: number;
+	cached_tokens?: number;
+	completion_tokens: number;
+	prompt_tokens: number;
 }
 
 export interface ChatResult {
-  text: string;
-  toolCalls: { id: string; name: string; args: Record<string, unknown> }[];
-  finishReason: string;
-  usage: ChatUsage;
+	finishReason: string;
+	text: string;
+	toolCalls: { id: string; name: string; args: Record<string, unknown> }[];
+	usage: ChatUsage;
 }
 
 export interface StreamHandlers {
-  onTextDelta?: (delta: string) => void | Promise<void>;
-  onThinkingDelta?: (delta: string) => void | Promise<void>;
+	onTextDelta?: (delta: string) => void | Promise<void>;
+	onThinkingDelta?: (delta: string) => void | Promise<void>;
 }
 
 export interface ModelAdapter {
-  id: string;
-  label: string;
-  streamChat(
-    req: ChatRequest,
-    handlers: StreamHandlers,
-    signal: AbortSignal,
-  ): Promise<ChatResult>;
+	id: string;
+	label: string;
+	streamChat: (
+		req: ChatRequest,
+		handlers: StreamHandlers,
+		signal: AbortSignal
+	) => Promise<ChatResult>;
 }

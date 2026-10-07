@@ -8,95 +8,116 @@
  */
 import { randomUUID } from "node:crypto";
 import type {
-  ChatRequest,
-  ChatResult,
-  ModelAdapter,
-  StreamHandlers,
+	ChatRequest,
+	ChatResult,
+	ModelAdapter,
+	StreamHandlers,
 } from "./types.js";
 
 export interface MockScriptStep {
-  text?: string;
-  toolCalls?: { name: string; args: Record<string, unknown> }[];
+	text?: string;
+	toolCalls?: { name: string; args: Record<string, unknown> }[];
 }
 
 export class MockAdapter implements ModelAdapter {
-  id = "mock";
-  label = "Mock（脚本化测试模型）";
-  private script: MockScriptStep[] = [];
+	id = "mock";
+	label = "Mock（脚本化测试模型）";
+	private readonly script: MockScriptStep[] = [];
 
-  pushScript(step: MockScriptStep): void {
-    this.script.push(step);
-  }
+	pushScript(step: MockScriptStep): void {
+		this.script.push(step);
+	}
 
-  async streamChat(
-    req: ChatRequest,
-    handlers: StreamHandlers,
-    signal: AbortSignal,
-  ): Promise<ChatResult> {
-    void signal;
-    const step = this.script.shift() ?? this.fallback(req);
+	async streamChat(
+		req: ChatRequest,
+		handlers: StreamHandlers,
+		signal: AbortSignal
+	): Promise<ChatResult> {
+		// biome-ignore lint/complexity/noVoid: 显式丢弃未用的 abort 信号参数（接口要求）
+		void signal;
+		const step = this.script.shift() ?? this.fallback(req);
 
-    // 模拟流式输出
-    let text = "";
-    for (const ch of step.text ?? "") {
-      if (handlers.onTextDelta) {
-        text += ch;
-        await handlers.onTextDelta(ch);
-        await new Promise((r) => setTimeout(r, 2));
-      } else {
-        text += ch;
-      }
-    }
+		// 模拟流式输出
+		let text = "";
+		for (const ch of step.text ?? "") {
+			if (handlers.onTextDelta) {
+				text += ch;
+				// biome-ignore lint/performance/noAwaitInLoops: 模拟流式输出必须逐字符按序
+				await handlers.onTextDelta(ch);
+				await new Promise((r) => setTimeout(r, 2));
+			} else {
+				text += ch;
+			}
+		}
 
-    return {
-      text,
-      toolCalls: (step.toolCalls ?? []).map((tc) => ({
-        id: `mock_${randomUUID()}`,
-        name: tc.name,
-        args: tc.args,
-      })),
-      finishReason: step.toolCalls?.length ? "tool_calls" : "stop",
-      usage: {
-        prompt_tokens: estimateTokens(req.system) + req.messages.length * 20,
-        completion_tokens: Math.ceil(text.length / 4),
-      },
-    };
-  }
+		return {
+			finishReason: step.toolCalls?.length ? "tool_calls" : "stop",
+			text,
+			toolCalls: (step.toolCalls ?? []).map((tc) => ({
+				args: tc.args,
+				id: `mock_${randomUUID()}`,
+				name: tc.name,
+			})),
+			usage: {
+				completion_tokens: Math.ceil(text.length / 4),
+				prompt_tokens: estimateTokens(req.system) + req.messages.length * 20,
+			},
+		};
+	}
 
-  private fallback(req: ChatRequest): MockScriptStep {
-    const last = req.messages[req.messages.length - 1];
-    // 工具结果回来了 → 结束轮次
-    if (last?.role === "tool") {
-      return { text: "工具已执行完毕，结果如上。还有什么可以帮你？" };
-    }
-    const userText = last?.content ?? "";
-    const visible = new Set(req.tools.map((t) => t.name));
-    const has = (name: string) => visible.size === 0 || visible.has(name);
+	private fallback(req: ChatRequest): MockScriptStep {
+		const last = req.messages.at(-1);
+		// 工具结果回来了 → 结束轮次
+		if (last?.role === "tool") {
+			return { text: "工具已执行完毕，结果如上。还有什么可以帮你？" };
+		}
+		const userText = last?.content ?? "";
+		const visible = new Set(req.tools.map((t) => t.name));
+		const has = (name: string) => visible.size === 0 || visible.has(name);
 
-    if (userText.startsWith("!write ") && has("write")) {
-      const [, p, ...rest] = userText.split(" ");
-      return { toolCalls: [{ name: "write", args: { path: p, content: rest.join(" ") } }] };
-    }
-    if (userText.startsWith("!read ") && has("read")) {
-      return { toolCalls: [{ name: "read", args: { path: userText.slice(6).trim() } }] };
-    }
-    if (userText.startsWith("!bash ") && has("bash")) {
-      return { toolCalls: [{ name: "bash", args: { command: userText.slice(6).trim() } }] };
-    }
-    if (userText.startsWith("!task ") && has("task")) {
-      return { toolCalls: [{ name: "task", args: { prompt: userText.slice(6).trim() } }] };
-    }
-    if (userText.startsWith("!memory ") && has("memory_write")) {
-      return {
-        toolCalls: [
-          { name: "memory_write", args: { entry: userText.slice(8).trim(), reason: "用户要求" } },
-        ],
-      };
-    }
-    return { text: `Mock 回复：收到「${userText.slice(0, 200)}」。可用 !write/!read/!bash/!task/!memory 触发工具调用。` };
-  }
+		if (userText.startsWith("!write ") && has("write")) {
+			const [, p, ...rest] = userText.split(" ");
+			return {
+				toolCalls: [
+					{ args: { content: rest.join(" "), path: p }, name: "write" },
+				],
+			};
+		}
+		if (userText.startsWith("!read ") && has("read")) {
+			return {
+				toolCalls: [{ args: { path: userText.slice(6).trim() }, name: "read" }],
+			};
+		}
+		if (userText.startsWith("!bash ") && has("bash")) {
+			return {
+				toolCalls: [
+					{ args: { command: userText.slice(6).trim() }, name: "bash" },
+				],
+			};
+		}
+		if (userText.startsWith("!task ") && has("task")) {
+			return {
+				toolCalls: [
+					{ args: { prompt: userText.slice(6).trim() }, name: "task" },
+				],
+			};
+		}
+		if (userText.startsWith("!memory ") && has("memory_write")) {
+			return {
+				toolCalls: [
+					{
+						args: { entry: userText.slice(8).trim(), reason: "用户要求" },
+						name: "memory_write",
+					},
+				],
+			};
+		}
+		return {
+			text: `Mock 回复：收到「${userText.slice(0, 200)}」。可用 !write/!read/!bash/!task/!memory 触发工具调用。`,
+		};
+	}
 }
 
 function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
+	return Math.ceil(text.length / 4);
 }

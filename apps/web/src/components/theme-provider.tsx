@@ -8,4 +8,5 @@ export function ThemeProvider({
 	return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
 }
 
+// biome-ignore lint/performance/noBarrelFile: 模板自带的 useTheme 出口（__root 需要）
 export { useTheme } from "next-themes";

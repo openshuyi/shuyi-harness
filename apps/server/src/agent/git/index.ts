@@ -13,38 +13,62 @@ import fs from "node:fs";
 import path from "node:path";
 
 function git(cwd: string, args: string[]): { ok: boolean; stdout: string } {
-  const r = spawnSync("git", ["-C", cwd, "-c", "user.name=agent", "-c", "user.email=agent@local", ...args], {
-    encoding: "utf-8",
-    timeout: 10000,
-  });
-  return { ok: r.status === 0, stdout: (r.stdout ?? "").trim() };
+	const r = spawnSync(
+		"git",
+		[
+			"-C",
+			cwd,
+			"-c",
+			"user.name=agent",
+			"-c",
+			"user.email=agent@local",
+			...args,
+		],
+		{
+			encoding: "utf-8",
+			timeout: 10_000,
+		}
+	);
+	return { ok: r.status === 0, stdout: (r.stdout ?? "").trim() };
 }
 
 /** 确保 cwd 是 git 仓库；返回是否可用（git 不存在或初始化失败时静默降级） */
 export function ensureRepo(cwd: string): boolean {
-  try {
-    if (fs.existsSync(path.join(cwd, ".git"))) return true;
-    const r = git(cwd, ["init"]);
-    return r.ok;
-  } catch {
-    return false;
-  }
+	try {
+		if (fs.existsSync(path.join(cwd, ".git"))) {
+			return true;
+		}
+		const r = git(cwd, ["init"]);
+		return r.ok;
+	} catch {
+		return false;
+	}
 }
 
 /**
  * 原子提交指定文件。返回 commit hash；无改动/非仓库/git 缺失时返回 null。
  */
-export function commitFiles(cwd: string, files: string[], message: string): string | null {
-  try {
-    const rel = files.map((f) => path.relative(cwd, f));
-    if (!git(cwd, ["add", "--", ...rel]).ok) return null;
-    // 无暂存改动则跳过
-    const diff = git(cwd, ["diff", "--cached", "--name-only"]);
-    if (!diff.ok || diff.stdout.length === 0) return null;
-    if (!git(cwd, ["commit", "-m", message]).ok) return null;
-    const head = git(cwd, ["rev-parse", "--short", "HEAD"]);
-    return head.ok ? head.stdout : null;
-  } catch {
-    return null;
-  }
+export function commitFiles(
+	cwd: string,
+	files: string[],
+	message: string
+): string | null {
+	try {
+		const rel = files.map((f) => path.relative(cwd, f));
+		if (!git(cwd, ["add", "--", ...rel]).ok) {
+			return null;
+		}
+		// 无暂存改动则跳过
+		const diff = git(cwd, ["diff", "--cached", "--name-only"]);
+		if (!diff.ok || diff.stdout.length === 0) {
+			return null;
+		}
+		if (!git(cwd, ["commit", "-m", message]).ok) {
+			return null;
+		}
+		const head = git(cwd, ["rev-parse", "--short", "HEAD"]);
+		return head.ok ? head.stdout : null;
+	} catch {
+		return null;
+	}
 }

@@ -1,9 +1,9 @@
 {
-	"extends": "@shuyi-harness/config/tsconfig.base.json",
-	"compilerOptions": {
-		"lib": ["ESNext"],
-		"types": []
-	},
-	"include": ["src/**/*.ts"],
-	"exclude": ["node_modules"]
+  "extends": "@shuyi-harness/config/tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "types": []
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules"]
 }

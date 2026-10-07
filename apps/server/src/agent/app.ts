@@ -8,17 +8,18 @@
  *   AGENT_CONTEXT_WINDOW 上下文窗口 token 数（默认 128000，压缩阈值=75%）
  *   AGENT_WEB_DIST     Web 构建产物目录（默认 apps/web/dist，二进制分发时用）
  */
-import path from "node:path";
+
 import fs from "node:fs";
+import path from "node:path";
 import { serveStatic } from "hono/bun";
 import "../env.server.js";
+import { createApi } from "./api/index.js";
 import { EventBus } from "./bus/index.js";
-import { SqliteEventStore } from "./store/event-store.js";
-import { createFullRegistry } from "./tools/index.js";
+import { connectMcpServers } from "./mcp/index.js";
 import { buildModelRegistry } from "./model/index.js";
 import { SessionManager } from "./session/manager.js";
-import { createApi } from "./api/index.js";
-import { connectMcpServers } from "./mcp/index.js";
+import { SqliteEventStore } from "./store/event-store.js";
+import { createFullRegistry } from "./tools/index.js";
 
 const HOME = process.env.HOME ?? "/root";
 const dbPath = process.env.AGENT_DB ?? path.join(HOME, ".agent", "agent.db");
@@ -28,23 +29,37 @@ const store = new SqliteEventStore(dbPath, bus);
 const tools = await createFullRegistry();
 const models = buildModelRegistry();
 const sessions = new SessionManager(store, tools, models);
-const app = createApi({ store, bus, sessions, models });
+const app = createApi({ bus, models, sessions, store });
 
 // MCP：连接外部工具 server（失败只告警，不影响主流程）
 const mcp = await connectMcpServers(tools);
-if (mcp.connected.length > 0) console.log(`[mcp] 已连接: ${mcp.connected.join(", ")}`);
-if (mcp.failed.length > 0) console.warn(`[mcp] 连接失败（已跳过）: ${mcp.failed.join(", ")}`);
+if (mcp.connected.length > 0) {
+	console.log(`[mcp] 已连接: ${mcp.connected.join(", ")}`);
+}
+if (mcp.failed.length > 0) {
+	console.warn(`[mcp] 连接失败（已跳过）: ${mcp.failed.join(", ")}`);
+}
 
 // 生产模式：若 web 已构建，由服务端直接托管静态文件（单进程单端口）
-const webDist = process.env.AGENT_WEB_DIST ?? path.resolve(import.meta.dir, "../../../web/dist");
-if (fs.existsSync(path.join(webDist, "index.html"))) {
-  app.use("/*", serveStatic({ root: webDist }));
-  app.get("*", serveStatic({ path: "/index.html", root: webDist }));
-  console.log(`[agent] 托管 Web 界面: ${webDist}`);
+// 兼容两种运行位置：dev（src/agent/）与 tsdown bundle（dist/index.mjs）
+const webDistCandidates = [
+	process.env.AGENT_WEB_DIST,
+	path.resolve(import.meta.dir, "../../../web/dist"), // dev: src/agent → apps/web/dist
+	path.resolve(import.meta.dir, "../../web/dist"), // bundle: dist → apps/web/dist
+].filter((p): p is string => Boolean(p));
+const webDist = webDistCandidates.find((p) =>
+	fs.existsSync(path.join(p, "index.html")),
+);
+if (webDist) {
+	app.use("/*", serveStatic({ root: webDist }));
+	app.get("*", serveStatic({ path: "/index.html", root: webDist }));
+	console.log(`[agent] 托管 Web 界面: ${webDist}`);
 }
 
 console.log(`[agent] 数据库: ${dbPath}`);
-console.log(`[agent] 可用模型: ${[...models.adapters.keys()].join(", ")}（默认 ${models.defaultModel}）`);
+console.log(
+	`[agent] 可用模型: ${[...models.adapters.keys()].join(", ")}（默认 ${models.defaultModel}）`
+);
 console.log(`[agent] 工具数: ${tools.list().length}`);
 
 export default app;

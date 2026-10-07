@@ -9,14 +9,14 @@ import { z } from "zod";
 const server = new McpServer({ name: "echo-fixture", version: "0.1.0" });
 
 server.registerTool(
-  "ping",
-  {
-    description: "原样返回输入",
-    inputSchema: { text: z.string() },
-  },
-  async ({ text }) => ({
-    content: [{ type: "text", text: `pong: ${text}` }],
-  }),
+	"ping",
+	{
+		description: "原样返回输入",
+		inputSchema: { text: z.string() },
+	},
+	async ({ text }) => ({
+		content: [{ text: `pong: ${text}`, type: "text" }],
+	})
 );
 
 await server.connect(new StdioServerTransport());

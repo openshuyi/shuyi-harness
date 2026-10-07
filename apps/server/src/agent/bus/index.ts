@@ -8,21 +8,21 @@ import type { AgentEvent } from "@shuyi-harness/types";
 export type EventListener = (event: AgentEvent) => void;
 
 export class EventBus {
-  private listeners = new Set<EventListener>();
+	private readonly listeners = new Set<EventListener>();
 
-  subscribe(listener: EventListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
+	subscribe(listener: EventListener): () => void {
+		this.listeners.add(listener);
+		return () => this.listeners.delete(listener);
+	}
 
-  publish(event: AgentEvent): void {
-    for (const listener of this.listeners) {
-      try {
-        listener(event);
-      } catch (err) {
-        // 订阅者故障不允许影响写入路径
-        console.error("[bus] listener error:", err);
-      }
-    }
-  }
+	publish(event: AgentEvent): void {
+		for (const listener of this.listeners) {
+			try {
+				listener(event);
+			} catch (err) {
+				// 订阅者故障不允许影响写入路径
+				console.error("[bus] listener error:", err);
+			}
+		}
+	}
 }
