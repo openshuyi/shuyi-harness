@@ -246,7 +246,7 @@ export const useSessionStore = create<SessionStoreState>((set, get) => {
 		) {
 			const s = recordOf(slot);
 			if (!s) return;
-			await fetch(
+			const res = await fetch(
 				`${apiBase()}/api/sessions/${s.session_id}/approvals/${approvalId}`,
 				{
 					body: JSON.stringify({
@@ -262,6 +262,13 @@ export const useSessionStore = create<SessionStoreState>((set, get) => {
 					method: "POST",
 				}
 			);
+			// 审批可能已失效（如 server 重启后 id 不再存在）——显式抛错，避免 UI 静默停在 awaiting
+			if (!res.ok) {
+				const err = await res.json().catch(() => ({}));
+				throw new Error(
+					(err as { error?: string }).error ?? `审批请求失败 ${res.status}`
+				);
+			}
 		},
 
 		async rewind(slot, toSeq, mode) {

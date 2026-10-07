@@ -90,6 +90,8 @@ export function ApprovalDialog({ slot = "primary" }: { slot?: PaneSlot }) {
 					text
 				);
 				setAnswerText("");
+			} catch (err) {
+				alert(err instanceof Error ? err.message : String(err));
 			} finally {
 				setBusy(false);
 			}
@@ -104,6 +106,8 @@ export function ApprovalDialog({ slot = "primary" }: { slot?: PaneSlot }) {
 					false,
 					undefined
 				);
+			} catch (err) {
+				alert(err instanceof Error ? err.message : String(err));
 			} finally {
 				setBusy(false);
 			}
@@ -190,6 +194,8 @@ export function ApprovalDialog({ slot = "primary" }: { slot?: PaneSlot }) {
 			);
 			setRememberMode("none");
 			setCustomGlob("");
+		} catch (err) {
+			alert(err instanceof Error ? err.message : String(err));
 		} finally {
 			setBusy(false);
 		}
@@ -210,6 +216,8 @@ export function ApprovalDialog({ slot = "primary" }: { slot?: PaneSlot }) {
 			}
 			setRememberMode("none");
 			setCustomGlob("");
+		} catch (err) {
+			alert(err instanceof Error ? err.message : String(err));
 		} finally {
 			setBusy(false);
 		}
