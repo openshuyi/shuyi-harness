@@ -11,6 +11,7 @@ import { logger } from "hono/logger";
 import { createContext } from "./context";
 import { desktopOrigins, ENV } from "./env.server";
 import { auth } from "./services";
+import agentApp from "./agent/app";
 
 const app = new Hono();
 
@@ -72,9 +73,12 @@ app.use("/*", async (c, next) => {
 	await next();
 });
 
+// Agent 子应用（REST + SSE + 静态托管），挂在 rpc/auth 之后
+app.route("/", agentApp);
+
 app.get("/", (c) => c.text("OK"));
 
 export default {
 	fetch: app.fetch,
-	port: 4351,
+	port: ENV.AGENT_PORT ?? 4351,
 };
