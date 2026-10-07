@@ -1,3 +1,4 @@
+import { Button } from "@shuyi-harness/ui/components/ui/button";
 import { Component, type ReactNode } from "react";
 
 interface Props {
@@ -22,26 +23,19 @@ export class ErrorBoundary extends Component<Props, State> {
 		const { error } = this.state;
 		if (error) {
 			return (
-				<div style={{ color: "#f87171", fontSize: 13, padding: 24 }}>
-					<div style={{ fontWeight: 600, marginBottom: 8 }}>
-						{this.props.name} 渲染出错
-					</div>
-					<pre
-						style={{
-							color: "var(--text-dim, #888)",
-							fontSize: 12,
-							whiteSpace: "pre-wrap",
-						}}
-					>
+				<div className="p-6 text-[13px] text-destructive">
+					<div className="mb-2 font-semibold">{this.props.name} 渲染出错</div>
+					<pre className="font-mono text-xs whitespace-pre-wrap text-muted-foreground">
 						{error.message}
 					</pre>
-					<button
-						className="primary"
+					<Button
+						className="mt-3"
 						onClick={() => this.setState({ error: null })}
-						style={{ marginTop: 12 }}
+						size="sm"
+						variant="outline"
 					>
 						重试
-					</button>
+					</Button>
 				</div>
 			);
 		}

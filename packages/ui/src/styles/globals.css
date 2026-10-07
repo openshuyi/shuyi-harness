@@ -16,9 +16,6 @@
 
 /* ---------- 纸 · light（默认 token；[data-theme="light"] 继承此处） ---------- */
 :root {
-	color-scheme: light;
-
-	/* 表面 · 宣纸 */
 	--background: #f3f0e9; /* bg-0 生纸 · 画布 */
 	--foreground: #211f1c; /* text-1 */
 	--card: #fcfbf7; /* bg-2 卷面 · 卡片 */
@@ -29,10 +26,16 @@
 	--secondary-foreground: #211f1c;
 	--muted: #f7f5ee; /* bg-1 熟纸 · 面板 */
 	--muted-foreground: #5a5750; /* text-2 */
-	--accent: color-mix(in srgb, #2e6ea6 10%, transparent); /* 天青 soft · 交互 hover */
+	--accent: color-mix(
+		in srgb,
+		#2e6ea6 10%,
+		transparent
+	); /* 天青 soft · 交互 hover */
 	--accent-foreground: #211f1c;
 	--primary: #2e6ea6; /* 天青 · 纸上沉静 */
 	--primary-foreground: #ffffff;
+	--primary-hover: #255d8e;
+	--primary-active: #3a7cb4;
 	--destructive: #c73a5c; /* 茜红 */
 	--border: rgba(32, 28, 20, 0.12); /* line-2 · 卡片描边 */
 	--input: rgba(32, 28, 20, 0.12);
@@ -45,6 +48,7 @@
 	--line-strong: rgba(32, 28, 20, 0.19); /* line-3 · 交互边 */
 	--seal: #b23415; /* 朱砂 · 印章专属（品牌印/批准） */
 	--seal-foreground: #ffffff;
+	--seal-hover: #9c2d11;
 	--seal-soft: rgba(178, 52, 21, 0.1);
 	--success: #0f8f66; /* 石绿 */
 	--success-soft: rgba(15, 143, 102, 0.1);
@@ -57,8 +61,8 @@
 
 	/* shadow — 深色下阴影被吞没，层次由亮度步进与发丝线承担；阴影属于浮层 */
 	--shadow-pop: 0 18px 56px rgba(32, 28, 20, 0.18);
-	--surface-lift: inset 0 -1px 0 rgba(32, 28, 20, 0.035),
-		0 1px 2px rgba(32, 28, 20, 0.06); /* machined edge · 纸面落影 */
+	--surface-lift:
+		inset 0 -1px 0 rgba(32, 28, 20, 0.035), 0 1px 2px rgba(32, 28, 20, 0.06); /* machined edge · 纸面落影 */
 
 	--chart-1: #2e6ea6;
 	--chart-2: #0f8f66;
@@ -89,14 +93,12 @@
 	/* motion */
 	--ease-instrument: cubic-bezier(0.25, 0.46, 0.45, 0.94);
 	--ease-pop: cubic-bezier(0.34, 1.3, 0.64, 1);
+	color-scheme: light;
 }
 
 /* ---------- 墨 · dark ---------- */
 .dark,
 [data-theme="dark"] {
-	color-scheme: dark;
-
-	/* 墨五色：焦 → 浓 → 重 → 淡（+ 沉墨凹陷） */
 	--background: #0f0e0d; /* 焦墨 · 画布 */
 	--foreground: #edebe6; /* 暖白 · 拓片 */
 	--card: #1c1b19; /* 重墨 · 卡片 */
@@ -111,6 +113,8 @@
 	--accent-foreground: #edebe6;
 	--primary: #8ab4d9; /* 天青 · 墨上瓷面 */
 	--primary-foreground: #101c28; /* 墨字瓷面 */
+	--primary-hover: #a3c5e2;
+	--primary-active: #75a3c8;
 	--destructive: #ef5f7d; /* 茜红 */
 	--border: rgba(255, 246, 235, 0.1); /* line-2 */
 	--input: rgba(255, 246, 235, 0.1);
@@ -122,6 +126,7 @@
 	--line-strong: rgba(255, 246, 235, 0.165); /* line-3 */
 	--seal: #d64730; /* 朱砂 */
 	--seal-foreground: #ffffff;
+	--seal-hover: #e4654e;
 	--seal-soft: rgba(214, 71, 48, 0.14);
 	--success: #35b98a; /* 石绿 */
 	--success-soft: rgba(53, 185, 138, 0.12);
@@ -149,6 +154,7 @@
 	--sidebar-accent-foreground: #edebe6;
 	--sidebar-border: rgba(255, 246, 235, 0.1);
 	--sidebar-ring: rgba(138, 180, 217, 0.45);
+	color-scheme: dark;
 }
 
 /* ---------- theme inline 映射（Tailwind 工具类生成） ---------- */
@@ -162,6 +168,8 @@
 	--color-popover-foreground: var(--popover-foreground);
 	--color-primary: var(--primary);
 	--color-primary-foreground: var(--primary-foreground);
+	--color-primary-hover: var(--primary-hover);
+	--color-primary-active: var(--primary-active);
 	--color-secondary: var(--secondary);
 	--color-secondary-foreground: var(--secondary-foreground);
 	--color-muted: var(--muted);
@@ -193,6 +201,7 @@
 	--color-line-strong: var(--line-strong);
 	--color-seal: var(--seal);
 	--color-seal-foreground: var(--seal-foreground);
+	--color-seal-hover: var(--seal-hover);
 	--color-seal-soft: var(--seal-soft);
 	--color-success: var(--success);
 	--color-success-soft: var(--success-soft);
@@ -218,6 +227,12 @@
 	/* 缓动 */
 	--ease-instrument: var(--ease-instrument);
 	--ease-pop: var(--ease-pop);
+
+	--animate-signal: signal 1.6s var(--ease-instrument) infinite;
+	--animate-stamp: stamp-in 280ms var(--ease-pop) both;
+	--animate-caret: caret-blink 1.1s steps(1) infinite;
+	--animate-rise: rise 200ms var(--ease-instrument) both;
+	--animate-enter: enter 320ms var(--ease-instrument) backwards;
 
 	/* 动效 —— 盖章是全系统唯一的"重"动效 */
 	@keyframes signal {
@@ -282,12 +297,6 @@
 			transform: none;
 		}
 	}
-
-	--animate-signal: signal 1.6s var(--ease-instrument) infinite;
-	--animate-stamp: stamp-in 280ms var(--ease-pop) both;
-	--animate-caret: caret-blink 1.1s steps(1) infinite;
-	--animate-rise: rise 200ms var(--ease-instrument) both;
-	--animate-enter: enter 320ms var(--ease-instrument) backwards;
 }
 
 /* ---------- 仪器读数与触感 utilities ---------- */
@@ -297,14 +306,14 @@
 	font-family: var(--font-mono);
 	font-size: 11px;
 	font-weight: 500;
-	letter-spacing: 0.06em;
 	text-transform: uppercase;
+	letter-spacing: 0.06em;
 }
 
 /* tnum —— tabular 数字：流式读数不抖版 */
 @utility tnum {
-	font-variant-numeric: tabular-nums;
 	font-feature-settings: "tnum" 1;
+	font-variant-numeric: tabular-nums;
 }
 
 /* surface-lift —— machined edge 卡片顶光（暗面受光/纸面落影） */
@@ -315,7 +324,6 @@
 /* shimmer-line —— 流式骨架行 */
 @utility shimmer-line {
 	height: 12px;
-	border-radius: 999px;
 	background: linear-gradient(
 		90deg,
 		var(--inset) 25%,
@@ -323,6 +331,7 @@
 		var(--inset) 75%
 	);
 	background-size: 200% 100%;
+	border-radius: 999px;
 	animation: shim 1.8s linear infinite;
 }
 
@@ -348,9 +357,9 @@
 	}
 
 	body {
-		@apply bg-background font-sans text-foreground antialiased;
 		font-size: 14px;
 		line-height: 1.6;
+		@apply bg-background font-sans text-foreground antialiased;
 	}
 
 	::selection {
@@ -367,8 +376,8 @@
 
 	/* 安静滚动条 —— 视觉宽度 4px，命中宽度 10px */
 	html {
-		scrollbar-width: thin;
 		scrollbar-color: var(--border) transparent;
+		scrollbar-width: thin;
 	}
 	::-webkit-scrollbar {
 		width: 10px;
@@ -379,9 +388,9 @@
 	}
 	::-webkit-scrollbar-thumb {
 		background: var(--border);
-		border-radius: 999px;
-		border: 3px solid transparent;
 		background-clip: padding-box;
+		border: 3px solid transparent;
+		border-radius: 999px;
 	}
 	::-webkit-scrollbar-thumb:hover {
 		background-color: var(--line-strong);
@@ -389,13 +398,13 @@
 
 	/* 触感层 —— 纸面纤维（feTurbulence 噪点，消除数字塑料感） */
 	body::after {
-		content: "";
 		position: fixed;
 		inset: 0;
 		z-index: 70;
 		pointer-events: none;
-		opacity: 0.04;
+		content: "";
 		background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+		opacity: 0.04;
 	}
 	.dark body::after,
 	[data-theme="dark"] body::after {
@@ -403,12 +412,12 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		 *,
+		*,
 		*::before,
 		*::after {
+			transition-duration: 0.01ms !important;
 			animation-duration: 0.01ms !important;
 			animation-iteration-count: 1 !important;
-			transition-duration: 0.01ms !important;
 		}
 	}
 }

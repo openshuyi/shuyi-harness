@@ -1,7 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
-import "@fontsource-variable/noto-serif-sc";
 
 import Loader from "./components/loader";
 import { routeTree } from "./routeTree.gen";
@@ -25,16 +24,6 @@ declare module "@tanstack/react-router" {
 		router: typeof router;
 	}
 }
-
-// 主题初始化：localStorage 记忆 > 系统偏好 > 深色
-const saved = localStorage.getItem("shuyi-theme");
-let theme = "dark";
-if (saved === "light" || saved === "dark") {
-	theme = saved;
-} else if (window.matchMedia("(prefers-color-scheme: light)").matches) {
-	theme = "light";
-}
-document.documentElement.dataset.theme = theme;
 
 const rootElement = document.getElementById("app");
 

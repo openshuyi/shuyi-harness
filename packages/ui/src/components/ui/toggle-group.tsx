@@ -33,7 +33,7 @@ function ToggleGroup({
 	return (
 		<ToggleGroupPrimitive
 			className={cn(
-				"group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-none data-vertical:flex-col data-vertical:items-stretch data-[size=sm]:rounded-none",
+				"group/toggle-group inline-flex w-fit flex-row items-center gap-0.5 rounded-sm border border-border bg-inset p-0.5 data-vertical:flex-col data-vertical:items-stretch",
 				className
 			)}
 			data-orientation={orientation}
@@ -65,7 +65,7 @@ function ToggleGroupItem({
 	return (
 		<TogglePrimitive
 			className={cn(
-				"shrink-0 focus:z-10 focus-visible:z-10 group-data-[spacing=0]/toggle-group:rounded-none group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:border-t-0 group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:border-l-0 group-data-[spacing=0]/toggle-group:px-2 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-end]:pr-1.5 group-data-[spacing=0]/toggle-group:has-data-[icon=inline-start]:pl-1.5 group-data-horizontal/toggle-group:data-[spacing=0]:last:rounded-none group-data-vertical/toggle-group:data-[spacing=0]:last:rounded-none group-data-vertical/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-t group-data-horizontal/toggle-group:data-[spacing=0]:data-[variant=outline]:first:border-l group-data-horizontal/toggle-group:data-[spacing=0]:first:rounded-none group-data-vertical/toggle-group:data-[spacing=0]:first:rounded-none",
+				"shrink-0 rounded-xs focus:z-10 focus-visible:z-10",
 				toggleVariants({
 					size: context.size || size,
 					variant: context.variant || variant,

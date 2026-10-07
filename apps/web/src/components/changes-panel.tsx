@@ -1,9 +1,25 @@
 /**
  * F2（v0.4）：变更面板——会话内被快照文件的 before/after unified diff 聚合，
  * 逐文件 接受（清快照）/ 撤销（恢复内容）。turn 结束与审查操作后自动刷新。
+ * 墨仪 §07：inset 底 mono diff，accept / retract 就在文件头；外壳由右栏 Tabs 提供。
  */
 
 import type { SessionRecord } from "@shuyi-harness/types";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@shuyi-harness/ui/components/ui/empty";
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from "@shuyi-harness/ui/components/ui/tooltip";
+import { CheckIcon, ChevronRightIcon, Undo2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchJson } from "../core/api.js";
 import { type PaneSlot, useSessionStore } from "../core/store.js";
@@ -18,11 +34,9 @@ interface FileChange {
 export function ChangesPanel({
 	slot = "primary",
 	session,
-	onClose,
 }: {
 	slot?: PaneSlot;
 	session: SessionRecord;
-	onClose: () => void;
 }) {
 	const trajectory = useSessionStore((s) =>
 		slot === "secondary" ? s.splitTrajectory : s.trajectory
@@ -34,10 +48,10 @@ export function ChangesPanel({
 
 	const refresh = async () => {
 		try {
-			const data = await fetchJson<{ changes: FileChange[] }>(
-				`/api/sessions/${session.session_id}/changes`
-			);
-			setChanges(data.changes);
+			const data = await fetchJson<{
+				changes: FileChange[] | Record<string, never>;
+			}>(`/api/sessions/${session.session_id}/changes`);
+			setChanges(Array.isArray(data.changes) ? data.changes : []);
 			setError(null);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
@@ -74,89 +88,136 @@ export function ChangesPanel({
 	const totalDel = changes.reduce((a, c) => a + c.deletions, 0);
 
 	return (
-		<div className="side-panel changes-panel">
-			<div className="side-panel-head">
-				<span>变更</span>
-				<span className="changes-stat">
-					{changes.length} 个文件 <em className="add">+{totalAdd}</em>{" "}
-					<em className="del">−{totalDel}</em>
-				</span>
-				<button className="side-panel-close" onClick={onClose} title="关闭">
-					×
-				</button>
-			</div>
-			{error && <div className="marker error">— {error} —</div>}
-			{!error && changes.length === 0 && (
-				<div className="changes-empty">
-					暂无待审变更（agent 修改文件后在此审查）
+		<TooltipProvider>
+			<div className="h-full overflow-y-auto">
+				<div className="flex items-center justify-between px-3 py-2">
+					<span className="label-mono text-faint">{changes.length} 个文件</span>
+					<span className="font-mono text-[11px] tnum">
+						<span className="text-success">+{totalAdd}</span>{" "}
+						<span className="text-destructive">−{totalDel}</span>
+					</span>
 				</div>
-			)}
-			{changes.map((ch) => {
-				const open = expanded.has(ch.path);
-				return (
-					<div className="change-file" key={ch.path}>
-						<div
-							className="change-file-head"
-							onClick={() =>
-								setExpanded((prev) => {
-									const next = new Set(prev);
-									if (next.has(ch.path)) next.delete(ch.path);
-									else next.add(ch.path);
-									return next;
-								})
-							}
-						>
-							<span>{open ? "▾" : "▸"}</span>
-							<span className="change-path" title={ch.path}>
-								{ch.path}
-							</span>
-							<em className="add">+{ch.additions}</em>
-							<em className="del">−{ch.deletions}</em>
-							<button
-								className="change-accept"
-								disabled={!idle}
-								onClick={(e) => {
-									e.stopPropagation();
-									void review(ch.path, "accept");
-								}}
-								title="接受：保留当前内容，清除快照"
-							>
-								✓
-							</button>
-							<button
-								className="change-revert"
-								disabled={!idle}
-								onClick={(e) => {
-									e.stopPropagation();
-									if (confirm(`撤销对 ${ch.path} 的修改？`))
-										void review(ch.path, "revert");
-								}}
-								title="撤销：恢复到修改前内容"
-							>
-								↩
-							</button>
-						</div>
-						{open && (
-							<pre className="change-diff">
-								{ch.diff.split("\n").map((line, i) => (
-									<div
-										className={
-											line.startsWith("+") && !line.startsWith("+++")
-												? "diff-line-add"
-												: line.startsWith("-") && !line.startsWith("---")
-													? "diff-line-del"
-													: "diff-line-meta"
-										}
-										key={i}
-									>
-										{line || " "}
-									</div>
-								))}
-							</pre>
-						)}
+				{error && (
+					<div className="mx-3 mb-2 rounded-sm border border-destructive/35 bg-destructive-soft px-3 py-2 font-mono text-[11.5px] text-destructive">
+						{error}
 					</div>
-				);
-			})}
-		</div>
+				)}
+				{!error && changes.length === 0 && (
+					<div className="px-3 pb-3">
+						<Empty className="rounded-md">
+							<EmptyHeader>
+								<EmptyMedia>
+									<span className="grid size-[38px] rotate-[-4deg] place-items-center rounded-[5px] bg-seal font-serif text-[19px] font-bold text-seal-foreground">
+										审
+									</span>
+								</EmptyMedia>
+								<EmptyTitle>暂无待审变更</EmptyTitle>
+								<EmptyDescription>
+									agent 修改文件后在此逐文件审查
+								</EmptyDescription>
+							</EmptyHeader>
+						</Empty>
+					</div>
+				)}
+				<div className="flex flex-col gap-2 px-3 pb-3">
+					{changes.map((ch) => {
+						const open = expanded.has(ch.path);
+						return (
+							<div
+								className="overflow-hidden rounded-md border border-border bg-card"
+								key={ch.path}
+							>
+								<div className="flex items-center gap-1 px-1.5 py-1">
+									<button
+										className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-xs px-1 py-1 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring"
+										onClick={() =>
+											setExpanded((prev) => {
+												const next = new Set(prev);
+												if (next.has(ch.path)) next.delete(ch.path);
+												else next.add(ch.path);
+												return next;
+											})
+										}
+										title={ch.path}
+										type="button"
+									>
+										<ChevronRightIcon
+											className={`size-3.5 shrink-0 text-faint transition-transform ${open ? "rotate-90" : ""}`}
+										/>
+										<span className="min-w-0 flex-1 truncate font-mono text-[12px] text-foreground">
+											{ch.path}
+										</span>
+										<span className="font-mono text-[11px] tnum text-success">
+											+{ch.additions}
+										</span>
+										<span className="font-mono text-[11px] tnum text-destructive">
+											−{ch.deletions}
+										</span>
+									</button>
+									<Tooltip>
+										<TooltipTrigger
+											render={
+												<Button
+													aria-label="接受"
+													disabled={!idle}
+													onClick={() => void review(ch.path, "accept")}
+													size="icon-xs"
+													variant="secondary"
+												/>
+											}
+										>
+											<CheckIcon className="text-success" />
+										</TooltipTrigger>
+										<TooltipContent>
+											接受：保留当前内容，清除快照
+										</TooltipContent>
+									</Tooltip>
+									<Tooltip>
+										<TooltipTrigger
+											render={
+												<Button
+													aria-label="撤销"
+													className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+													disabled={!idle}
+													onClick={() => {
+														if (confirm(`撤销对 ${ch.path} 的修改？`))
+															void review(ch.path, "revert");
+													}}
+													size="icon-xs"
+													variant="ghost"
+												/>
+											}
+										>
+											<Undo2Icon />
+										</TooltipTrigger>
+										<TooltipContent>撤销：恢复到修改前内容</TooltipContent>
+									</Tooltip>
+								</div>
+								{open && (
+									<div className="border-t border-border bg-inset">
+										<pre className="diff-code">
+											{ch.diff.split("\n").map((line, i) => (
+												<div
+													className={
+														line.startsWith("+") && !line.startsWith("+++")
+															? "diff-line-add"
+															: line.startsWith("-") && !line.startsWith("---")
+																? "diff-line-del"
+																: "diff-line-meta"
+													}
+													key={i}
+												>
+													{line || " "}
+												</div>
+											))}
+										</pre>
+									</div>
+								)}
+							</div>
+						);
+					})}
+				</div>
+			</div>
+		</TooltipProvider>
 	);
 }

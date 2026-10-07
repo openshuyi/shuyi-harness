@@ -1,0 +1,251 @@
+/* ============================================================
+   Markdown / Diff / hljs —— 墨仪 v2.1（docs/编码智能体-UI设计稿-v2.html §07/§08）
+   助手全宽 markdown 流式渲染：body-dense 13px；代码块 inset 读数区。
+   全部颜色走主题 token（--inset / --info / --success / …），双主题自适应。
+   ============================================================ */
+
+.markdown-body {
+	font-size: 13px;
+	line-height: 1.65;
+	color: var(--foreground);
+	overflow-wrap: break-word;
+}
+.markdown-body > *:first-child {
+	margin-top: 0;
+}
+.markdown-body > *:last-child {
+	margin-bottom: 0;
+}
+.markdown-body p {
+	margin: 8px 0;
+}
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+	margin: 16px 0 6px;
+	font-family: var(--font-serif);
+	font-size: 15.5px;
+	font-weight: 600;
+	letter-spacing: 0.01em;
+}
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+	margin: 14px 0 6px;
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+.markdown-body ul,
+.markdown-body ol {
+	padding-left: 20px;
+	margin: 6px 0;
+	color: var(--muted-foreground);
+}
+.markdown-body li {
+	margin: 3px 0;
+}
+.markdown-body li::marker {
+	color: var(--faint);
+}
+.markdown-body a {
+	color: var(--primary);
+	text-decoration: none;
+}
+.markdown-body a:hover {
+	text-decoration: underline;
+	text-underline-offset: 3px;
+}
+.markdown-body strong {
+	font-weight: 600;
+	color: var(--foreground);
+}
+.markdown-body hr {
+	margin: 14px 0;
+	border: none;
+	border-top: 1px solid var(--border);
+}
+.markdown-body blockquote {
+	padding: 2px 0 2px 12px;
+	margin: 10px 0;
+	color: var(--muted-foreground);
+	border-left: 2px solid var(--primary);
+}
+.markdown-body img {
+	max-width: 100%;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+}
+
+/* inline code —— mono 小胶囊 */
+.markdown-body :not(pre) > code {
+	padding: 1px 5px;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	color: var(--info);
+	background: var(--inset);
+	border: 1px solid var(--border);
+	border-radius: 6px;
+}
+
+/* code block —— inset 读数区 */
+.markdown-body pre {
+	padding: 12px 14px;
+	margin: 10px 0;
+	overflow-x: auto;
+	font-family: var(--font-mono);
+	font-size: 12.5px;
+	line-height: 1.65;
+	color: var(--muted-foreground);
+	background: var(--inset);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+	box-shadow: var(--surface-lift);
+}
+.markdown-body pre code {
+	padding: 0;
+	font-family: inherit;
+	color: inherit;
+	background: none;
+	border: none;
+}
+
+/* 表格 —— §20：th mono uppercase，行 hover */
+.markdown-body table {
+	width: 100%;
+	margin: 10px 0;
+	overflow: hidden;
+	font-size: 12.5px;
+	border-spacing: 0;
+	border-collapse: separate;
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+}
+.markdown-body th {
+	padding: 7px 12px;
+	font-family: var(--font-mono);
+	font-size: 10.5px;
+	font-weight: 500;
+	color: var(--faint);
+	text-align: left;
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	background: var(--muted);
+	border-bottom: 1px solid var(--border);
+}
+.markdown-body td {
+	padding: 7px 12px;
+	color: var(--muted-foreground);
+	border-bottom: 1px solid var(--border);
+}
+.markdown-body tbody tr:last-child td {
+	border-bottom: none;
+}
+.markdown-body tbody tr:hover td {
+	background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+/* hljs token —— 色彩即信号：keyword 青瓷 · string 石绿 · comment 黛 */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-tag,
+.hljs-name,
+.hljs-built_in,
+.hljs-type {
+	color: var(--info);
+}
+.hljs-string,
+.hljs-attr,
+.hljs-attribute,
+.hljs-selector-attr,
+.hljs-regexp,
+.hljs-addition {
+	color: var(--success);
+}
+.hljs-comment,
+.hljs-quote {
+	font-style: italic;
+	color: var(--faint);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-variable,
+.hljs-template-variable {
+	color: var(--warning);
+}
+.hljs-title,
+.hljs-title.class_,
+.hljs-title.function_,
+.hljs-selector-class,
+.hljs-selector-id {
+	color: var(--primary);
+}
+.hljs-meta,
+.hljs-doctag,
+.hljs-section {
+	color: var(--muted-foreground);
+}
+.hljs-emphasis {
+	font-style: italic;
+}
+.hljs-strong {
+	font-weight: 600;
+}
+.hljs-deletion {
+	color: var(--destructive);
+}
+
+/* mermaid 块 */
+.mermaid-block {
+	display: flex;
+	justify-content: center;
+	padding: 10px;
+	margin: 10px 0;
+	overflow-x: auto;
+	background: var(--inset);
+	border: 1px solid var(--border);
+	border-radius: var(--radius-sm);
+}
+.mermaid-block svg {
+	max-width: 100%;
+	height: auto;
+}
+
+/* ---------- unified diff 行（工具卡 + 变更面板共用） ---------- */
+.diff-code {
+	overflow-x: auto;
+	font-family: var(--font-mono);
+	font-size: 12px;
+	line-height: 1.7;
+}
+.diff-line-add,
+.diff-line-del,
+.diff-line-meta {
+	padding: 0 14px 0 10px;
+	white-space: pre;
+}
+.diff-line-add {
+	color: var(--foreground);
+	background: var(--success-soft);
+	box-shadow: inset 2px 0 0 var(--success);
+}
+.diff-line-del {
+	color: var(--muted-foreground);
+	background: var(--destructive-soft);
+	box-shadow: inset 2px 0 0 var(--destructive);
+}
+.diff-line-meta {
+	color: var(--faint);
+}
+
+/* 预览面板点选元素模式 */
+.shuyi-picking,
+.shuyi-picking * {
+	cursor: crosshair !important;
+}
+.shuyi-picking *:hover {
+	outline: 2px solid var(--primary);
+	outline-offset: 1px;
+}

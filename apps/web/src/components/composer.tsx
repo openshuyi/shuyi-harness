@@ -1,17 +1,42 @@
 /**
- * Composer（v0.4）：
- * - / 斜杠命令补全 + @ 文件引用补全（同一套 palette 交互）
+ * Composer（墨仪 §10 输入区）：
+ * - 聚焦时 line-3 + accent-ring；模式分段控件 + mono 模型选择 + @ 引用与排队 chips
+ * - / 斜杠命令补全 + @ 文件引用补全（同一套 palette 交互，浮于输入区上方）
  * - busy 时可继续发送（服务端排队），排队 chips 可撤回；「打断并发送」= abort + 排队
  * - Esc：补全打开→关闭；busy→中断；否则清空输入；空输入 ↑ 召回历史
  * - 消息编辑重发：requestEdit 载入文本，提交前先 conversation-rewind 再发送
- * - 常驻用量条（tokens / 成本 / 上下文估算占比）
+ * - 常驻用量条（tokens / 成本 / 上下文估算占比，ctx>70% 转暖色警告）
  */
 
 import type { AgentInfo, ModelInfo } from "@shuyi-harness/types";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@shuyi-harness/ui/components/ui/select";
+import {
+	ToggleGroup,
+	ToggleGroupItem,
+} from "@shuyi-harness/ui/components/ui/toggle-group";
 import { useQuery } from "@tanstack/react-query";
+import {
+	ArrowUpIcon,
+	BotIcon,
+	CogIcon,
+	PaperclipIcon,
+	ShieldCheckIcon,
+	SquareIcon,
+	ZapIcon,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { fetchJson, fetchJsonArray } from "../core/api.js";
 import { type PaneSlot, useSessionStore } from "../core/store.js";
+import { AgentManager } from "./agent-manager.js";
+import { ModelManager } from "./model-manager.js";
+import { PermissionManager } from "./permission-manager.js";
 
 /** P0-4a：斜杠命令定义（/api/sessions/:id/commands） */
 interface CommandInfo {
@@ -19,10 +44,6 @@ interface CommandInfo {
 	name: string;
 	source: "global" | "project";
 }
-
-import { AgentManager } from "./agent-manager.js";
-import { ModelManager } from "./model-manager.js";
-import { PermissionManager } from "./permission-manager.js";
 
 export function Composer({ slot = "primary" }: { slot?: PaneSlot }) {
 	const current = useSessionStore((s) =>
@@ -95,10 +116,10 @@ export function Composer({ slot = "primary" }: { slot?: PaneSlot }) {
 		enabled: !!current,
 		queryFn: async () => {
 			try {
-				const data = await fetchJson<{ commands: CommandInfo[] }>(
-					`/api/sessions/${current!.session_id}/commands`
-				);
-				return data.commands;
+				const data = await fetchJson<{
+					commands: CommandInfo[] | Record<string, never>;
+				}>(`/api/sessions/${current!.session_id}/commands`);
+				return Array.isArray(data.commands) ? data.commands : [];
 			} catch {
 				return [];
 			}
@@ -111,10 +132,12 @@ export function Composer({ slot = "primary" }: { slot?: PaneSlot }) {
 		enabled: !!current && atQuery !== null,
 		queryFn: async () => {
 			try {
-				const data = await fetchJson<{ files: string[] }>(
+				const data = await fetchJson<{
+					files: string[] | Record<string, never>;
+				}>(
 					`/api/sessions/${current!.session_id}/files?q=${encodeURIComponent(atQuery ?? "")}`
 				);
-				return data.files;
+				return Array.isArray(data.files) ? data.files : [];
 			} catch {
 				return [];
 			}
@@ -206,180 +229,67 @@ export function Composer({ slot = "primary" }: { slot?: PaneSlot }) {
 		ctxWindow && trajectory.usage.prompt > 0
 			? Math.min(99, Math.round((trajectory.usage.prompt / ctxWindow) * 100))
 			: null;
+	const usageHot = ctxPct !== null && ctxPct > 70;
 
 	return (
-		<div className="composer">
-			<div className="composer-inner">
-				<div className="composer-toolbar">
-					<select
-						onChange={(e) =>
-							void setMode(slot, e.target.value as "plan" | "build")
-						}
-						value={current.mode}
-					>
-						<option value="build">Build 模式</option>
-						<option value="plan">Plan 模式</option>
-					</select>
-					<select
-						onChange={(e) => void setModel(slot, e.target.value)}
-						value={current.model}
-					>
-						{models.map((m) => (
-							<option key={m.id} value={m.id}>
-								{m.label}
-							</option>
-						))}
-					</select>
-					{/* M2：代理选择器（title 显示当前代理描述） */}
-					<select
-						onChange={(e) =>
-							void setAgent(slot, e.target.value).catch((err) =>
-								alert(err instanceof Error ? err.message : String(err))
-							)
-						}
-						title={currentAgentDesc ?? "选择会话代理"}
-						value={currentAgent}
-					>
-						{[...new Set(["build", ...agents.map((a) => a.name)])].map(
-							(name) => (
-								<option key={name} value={name}>
-									{name === currentAgent ? `代理: ${name}` : name}
-								</option>
-							)
-						)}
-					</select>
-					<button onClick={() => setAgentManagerOpen(true)} title="代理管理">
-						⚙ 代理
-					</button>
-					<button onClick={() => setManagerOpen(true)} title="模型管理">
-						⚙ 模型
-					</button>
-					<button onClick={() => setPermManagerOpen(true)} title="权限规则管理">
-						⚙ 权限
-					</button>
-					{/* F6：常驻用量条（tokens / 成本 / 上下文占比估算） */}
-					<span
-						className={`usage ${ctxPct !== null && ctxPct > 70 ? "usage-warn" : ""}`}
-					>
-						{trajectory.usage.prompt.toLocaleString()} in /{" "}
-						{trajectory.usage.completion.toLocaleString()} out
-						{current.usage?.cost_usd != null && (
-							<> · ${current.usage.cost_usd.toFixed(4)}</>
-						)}
-						{ctxPct !== null && <> · 上下文 {ctxPct}%</>}
-					</span>
-				</div>
-				<ModelManager
-					onClose={() => setManagerOpen(false)}
-					open={managerOpen}
-				/>
-				<AgentManager
-					cwd={current.cwd}
-					onClose={() => setAgentManagerOpen(false)}
-					open={agentManagerOpen}
-				/>
-				<PermissionManager
-					cwd={current.cwd}
-					onClose={() => setPermManagerOpen(false)}
-					open={permManagerOpen}
-				/>
-				{/* F4：排队消息 chips */}
-				{trajectory.queued.length > 0 && (
-					<div className="queue-bar">
-						{trajectory.queued.map((q) => (
-							<span className="queue-chip" key={q.queueId} title={q.text}>
-								⏳ {q.text.slice(0, 40)}
-								{q.text.length > 40 ? "…" : ""}
+		<div className="relative flex-none border-t bg-background px-4 pt-0 pb-3 md:px-6">
+			<div className="relative">
+				{/* / 与 @ 补全面板 —— 浮于输入区上方 */}
+				{(slashOpen || atOpen) && (
+					<div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-md border bg-popover p-1.5 shadow-(--shadow-pop)">
+						{slashOpen &&
+							slashCandidates.map((c, i) => (
 								<button
-									onClick={() => void cancelQueued(slot, q.queueId)}
-									title="撤回"
+									className={`flex w-full items-center gap-3 rounded-sm px-2.5 py-1.5 text-left ${
+										i === slashIdx
+											? "bg-accent text-foreground"
+											: "text-muted-foreground"
+									}`}
+									key={c.name}
+									onClick={() => pickCommand(c.name)}
+									onMouseEnter={() => setSlashIdx(i)}
+									type="button"
 								>
-									×
+									<span className="font-mono text-xs font-semibold text-primary">
+										/{c.name}
+									</span>
+									<span className="flex-1 truncate text-xs">
+										{c.description || "自定义命令"}
+									</span>
+									<span className="label-mono text-[10px] text-faint">
+										{c.source === "project" ? "项目" : "全局"}
+									</span>
 								</button>
-							</span>
-						))}
-					</div>
-				)}
-				{editingSeq !== null && (
-					<div className="edit-banner">
-						✎ 正在编辑历史消息——发送后将移除其后的会话内容
-						<button
-							onClick={() => {
-								clearEditRequest();
-								setText("");
-							}}
-						>
-							取消
-						</button>
-					</div>
-				)}
-				{files.length > 0 && (
-					<div className="attachment-bar">
-						{files.map((f, i) => (
-							<span className="attachment-chip" key={i}>
-								📎 {f.name}
+							))}
+						{atOpen &&
+							atFiles.map((f, i) => (
 								<button
-									onClick={() => setFiles(files.filter((_, j) => j !== i))}
+									className={`flex w-full items-center gap-3 rounded-sm px-2.5 py-1.5 text-left ${
+										i === atIdx
+											? "bg-accent text-foreground"
+											: "text-muted-foreground"
+									}`}
+									key={f}
+									onClick={() => pickFile(f)}
+									onMouseEnter={() => setAtIdx(i)}
+									type="button"
 								>
-									×
+									<span className="truncate font-mono text-xs text-info">
+										@{f}
+									</span>
+									<span className="flex-1" />
+									<span className="label-mono text-[10px] text-faint">
+										引用文件
+									</span>
 								</button>
-							</span>
-						))}
+							))}
 					</div>
 				)}
-				{slashOpen && (
-					<div className="slash-palette">
-						{slashCandidates.map((c, i) => (
-							<button
-								className={`slash-item ${i === slashIdx ? "active" : ""}`}
-								key={c.name}
-								onClick={() => pickCommand(c.name)}
-								onMouseEnter={() => setSlashIdx(i)}
-							>
-								<span className="slash-name">/{c.name}</span>
-								<span className="slash-desc">
-									{c.description || "自定义命令"}
-								</span>
-								<span className="slash-source">
-									{c.source === "project" ? "项目" : "全局"}
-								</span>
-							</button>
-						))}
-					</div>
-				)}
-				{atOpen && (
-					<div className="slash-palette">
-						{atFiles.map((f, i) => (
-							<button
-								className={`slash-item ${i === atIdx ? "active" : ""}`}
-								key={f}
-								onClick={() => pickFile(f)}
-								onMouseEnter={() => setAtIdx(i)}
-							>
-								<span className="slash-name">@{f}</span>
-								<span className="slash-desc">引用文件内容</span>
-							</button>
-						))}
-					</div>
-				)}
-				<div className="composer-row">
-					<label
-						className="attach-btn"
-						title="添加附件（文件将保存到工作区供 agent 读取）"
-					>
-						📎
-						<input
-							multiple
-							onChange={(e) => {
-								if (e.target.files)
-									setFiles([...files, ...Array.from(e.target.files)]);
-								e.target.value = "";
-							}}
-							style={{ display: "none" }}
-							type="file"
-						/>
-					</label>
+
+				{/* 输入区外壳（§10）：聚焦 line-3 + accent-ring */}
+				<div className="surface-lift rounded-md border bg-card transition-[border-color,box-shadow] focus-within:border-line-strong focus-within:ring-[3px] focus-within:ring-ring">
 					<textarea
+						className="w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-[13.5px] leading-relaxed text-foreground outline-none placeholder:text-faint"
 						onChange={(e) => {
 							setText(e.target.value);
 							setHistIdx(-1);
@@ -460,42 +370,274 @@ export function Composer({ slot = "primary" }: { slot?: PaneSlot }) {
 						placeholder={
 							busy
 								? "运行中——可直接输入排队（Enter 发送），或点「打断并发送」"
-								: "输入消息（/ 命令、@ 引用文件），Enter 发送"
+								: "描述任务… @ 引用文件，/ 斜杠命令，⌘K 命令面板"
 						}
 						ref={textareaRef}
-						rows={3}
+						rows={2}
 						value={text}
 					/>
-					{busy ? (
-						<>
-							<button
-								className="interrupt-send-btn"
-								disabled={sending || !text.trim()}
-								onClick={() => void interruptAndSend()}
-								title="中断当前轮次并立即发送（Esc 仅中断）"
-							>
-								⇧ 打断发送
-							</button>
-							<button
-								className="abort-btn"
-								onClick={() => void abort(slot)}
-								title="中断（Esc）"
-							>
-								■
-							</button>
-						</>
-					) : (
-						<button
-							className="send-btn"
-							disabled={sending || !text.trim()}
-							onClick={() => void submit()}
-							title="发送（Enter）"
-						>
-							↑
-						</button>
+
+					{/* chips：排队 / 编辑 / 附件（§10 chip-q：inset 底 mono 胶囊） */}
+					{(trajectory.queued.length > 0 ||
+						editingSeq !== null ||
+						files.length > 0) && (
+						<div className="flex flex-wrap gap-1.5 px-3.5 pb-1.5">
+							{editingSeq !== null && (
+								<span className="inline-flex items-center gap-1.5 rounded-full border bg-inset px-2.5 py-0.5 font-mono text-[11px] text-info">
+									✎ 正在编辑历史消息
+									<button
+										className="px-0.5 text-faint hover:text-destructive"
+										onClick={() => {
+											clearEditRequest();
+											setText("");
+										}}
+										title="取消编辑（发送后将移除其后的会话内容）"
+										type="button"
+									>
+										×
+									</button>
+								</span>
+							)}
+							{trajectory.queued.map((q) => (
+								<span
+									className="inline-flex items-center gap-1.5 rounded-full border bg-inset px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+									key={q.queueId}
+									title={q.text}
+								>
+									⏳ {q.text.slice(0, 40)}
+									{q.text.length > 40 ? "…" : ""}
+									<button
+										className="px-0.5 text-faint hover:text-destructive"
+										onClick={() => void cancelQueued(slot, q.queueId)}
+										title="撤队"
+										type="button"
+									>
+										×
+									</button>
+								</span>
+							))}
+							{files.map((f, i) => (
+								<span
+									className="inline-flex items-center gap-1.5 rounded-full border bg-inset px-2.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+									key={i}
+								>
+									📎 {f.name}
+									<button
+										className="px-0.5 text-faint hover:text-destructive"
+										onClick={() => setFiles(files.filter((_, j) => j !== i))}
+										title="移除附件"
+										type="button"
+									>
+										×
+									</button>
+								</span>
+							))}
+						</div>
 					)}
+
+					{/* comp-f：模式分段 / 模型 / 代理 / 管理入口 / 发送 */}
+					<div className="flex flex-wrap items-center gap-2 px-2.5 py-2">
+						{/* §10 seg：模式分段控件 */}
+						<ToggleGroup
+							onValueChange={(groupValue) => {
+								const next = groupValue.find((v) => v !== current.mode);
+								if (next) void setMode(slot, next as "plan" | "build");
+							}}
+							value={[current.mode]}
+						>
+							<ToggleGroupItem value="build">Build</ToggleGroupItem>
+							<ToggleGroupItem value="plan">Plan</ToggleGroupItem>
+						</ToggleGroup>
+
+						{/* §10 model-pick：mono 模型选择 */}
+						<Select
+							onValueChange={(v) => {
+								if (v) void setModel(slot, v);
+							}}
+							value={current.model}
+						>
+							<SelectTrigger
+								className="h-[26px] rounded-xs border-transparent bg-transparent px-2 font-mono text-[11.5px] hover:border-border hover:bg-inset"
+								size="sm"
+								title="模型"
+							>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent alignItemWithTrigger={false} className="min-w-44">
+								{models.map((m) => (
+									<SelectItem key={m.id} value={m.id}>
+										{m.label}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+
+						{/* M2：代理选择器 */}
+						<Select
+							onValueChange={(v) => {
+								if (!v) return;
+								void setAgent(slot, v).catch((err) =>
+									alert(err instanceof Error ? err.message : String(err))
+								);
+							}}
+							value={currentAgent}
+						>
+							<SelectTrigger
+								className="h-[26px] rounded-xs border-transparent bg-transparent px-2 font-mono text-[11.5px] hover:border-border hover:bg-inset"
+								size="sm"
+								title={currentAgentDesc ?? "选择会话代理"}
+							>
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent alignItemWithTrigger={false} className="min-w-40">
+								{[...new Set(["build", ...agents.map((a) => a.name)])].map(
+									(name) => (
+										<SelectItem key={name} value={name}>
+											{name}
+										</SelectItem>
+									)
+								)}
+							</SelectContent>
+						</Select>
+
+						{/* 管理入口 */}
+						<div className="flex items-center gap-0.5">
+							<Button
+								onClick={() => setAgentManagerOpen(true)}
+								size="icon-sm"
+								title="代理管理"
+								variant="ghost"
+							>
+								<BotIcon />
+							</Button>
+							<Button
+								onClick={() => setManagerOpen(true)}
+								size="icon-sm"
+								title="模型管理"
+								variant="ghost"
+							>
+								<CogIcon />
+							</Button>
+							<Button
+								onClick={() => setPermManagerOpen(true)}
+								size="icon-sm"
+								title="权限规则管理"
+								variant="ghost"
+							>
+								<ShieldCheckIcon />
+							</Button>
+						</div>
+
+						<span className="flex-1" />
+
+						{trajectory.queued.length > 0 && (
+							<span className="label-mono tnum text-[10px] text-faint">
+								queued {trajectory.queued.length}
+							</span>
+						)}
+
+						{/* 附件 */}
+						<label title="添加附件（文件将保存到工作区供 agent 读取）">
+							<PaperclipIcon className="mx-1 size-4 cursor-pointer text-faint transition-colors hover:text-foreground" />
+							<input
+								className="hidden"
+								multiple
+								onChange={(e) => {
+									if (e.target.files)
+										setFiles([...files, ...Array.from(e.target.files)]);
+									e.target.value = "";
+								}}
+								type="file"
+							/>
+						</label>
+
+						{busy ? (
+							<>
+								<Button
+									disabled={sending || !text.trim()}
+									onClick={() => void interruptAndSend()}
+									size="sm"
+									title="中断当前轮次并立即发送（Esc 仅中断）"
+									variant="secondary"
+								>
+									⇧ 打断发送
+								</Button>
+								<Button
+									aria-label="中断"
+									className="border-destructive! bg-transparent! text-destructive! hover:bg-destructive-soft!"
+									onClick={() => void abort(slot)}
+									size="icon"
+									title="中断（Esc）"
+									variant="outline"
+								>
+									<SquareIcon />
+								</Button>
+							</>
+						) : (
+							<Button
+								aria-label="发送"
+								className="size-[34px] rounded-sm"
+								disabled={sending || !text.trim()}
+								onClick={() => void submit()}
+								title="发送（Enter）"
+								variant="default"
+							>
+								<ArrowUpIcon />
+							</Button>
+						)}
+					</div>
+
+					{/* §10 usage：常驻用量读数（mono · tabular） */}
+					<div
+						className={`flex items-center gap-3.5 border-t bg-panel px-3.5 py-[7px] font-mono text-[11px] ${
+							usageHot ? "text-warning" : "text-faint"
+						}`}
+					>
+						<span className="tnum">
+							in {trajectory.usage.prompt.toLocaleString()}
+						</span>
+						<span className="tnum">
+							out {trajectory.usage.completion.toLocaleString()}
+						</span>
+						{current.usage?.cost_usd != null && (
+							<span className="tnum">${current.usage.cost_usd.toFixed(4)}</span>
+						)}
+						{ctxPct !== null && (
+							<span
+								className={`tnum ${usageHot ? "" : "text-muted-foreground"}`}
+							>
+								ctx {ctxPct}%{usageHot ? " · 即将压缩" : ""}
+							</span>
+						)}
+						{ctxPct !== null && (
+							<div className="h-[3px] max-w-[180px] flex-1 overflow-hidden rounded-full bg-border">
+								<div
+									className={`h-full rounded-full ${usageHot ? "bg-warning" : "bg-primary"}`}
+									style={{ width: `${ctxPct}%` }}
+								/>
+							</div>
+						)}
+						{models.length === 0 && (
+							<span className="flex items-center gap-1 text-faint">
+								<ZapIcon className="size-3" />
+								未配置模型
+							</span>
+						)}
+					</div>
 				</div>
 			</div>
+
+			<ModelManager onClose={() => setManagerOpen(false)} open={managerOpen} />
+			<AgentManager
+				cwd={current.cwd}
+				onClose={() => setAgentManagerOpen(false)}
+				open={agentManagerOpen}
+			/>
+			<PermissionManager
+				cwd={current.cwd}
+				onClose={() => setPermManagerOpen(false)}
+				open={permManagerOpen}
+			/>
 		</div>
 	);
 }

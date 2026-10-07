@@ -1,9 +1,30 @@
 /**
  * 模型管理面板：查看/新增/删除模型，设置默认模型。
  * 数据来自 GET /api/models，增删走 POST/DELETE /api/models。
+ * 墨仪 §09/§19/§20：Dialog + mono 表格 + Label 置上的表单。
  */
 
 import type { AddModelRequest, ModelInfo } from "@shuyi-harness/types";
+import { Badge } from "@shuyi-harness/ui/components/ui/badge";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@shuyi-harness/ui/components/ui/dialog";
+import { Input } from "@shuyi-harness/ui/components/ui/input";
+import { Label } from "@shuyi-harness/ui/components/ui/label";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@shuyi-harness/ui/components/ui/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchJson, fetchJsonArray } from "../core/api.js";
@@ -84,157 +105,208 @@ export function ModelManager({ open, onClose }: Props) {
 		onSuccess: invalidate,
 	});
 
-	if (!open) return null;
 	const set = (patch: Partial<AddModelRequest>) =>
 		setForm((f) => ({ ...f, ...patch }));
 
+	const fieldClass = "flex flex-col gap-1.5";
+	const labelClass = "text-[12.5px] font-medium text-foreground";
+
 	return (
-		<div className="approval-overlay" onClick={onClose}>
-			<div
-				className="approval-dialog"
-				onClick={(e) => e.stopPropagation()}
-				style={{ width: 640 }}
-			>
-				<h3>模型管理</h3>
-				<div className="risk">
-					OpenAI 兼容协议端点（OpenAI / DeepSeek / 其他 /chat/completions 服务）
-				</div>
+		<Dialog onOpenChange={(o) => !o && onClose()} open={open}>
+			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[640px]">
+				<DialogHeader>
+					<DialogTitle>模型管理</DialogTitle>
+					<DialogDescription>
+						OpenAI 兼容协议端点（OpenAI / DeepSeek / 其他 /chat/completions
+						服务）
+					</DialogDescription>
+				</DialogHeader>
 
 				{/* 现有模型列表 */}
-				<table className="model-table">
-					<thead>
-						<tr>
-							<th>ID</th>
-							<th>上游模型</th>
-							<th>上下文</th>
-							<th>定价 ($/M)</th>
-							<th>来源</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{models.map((m) => (
-							<tr key={m.id}>
-								<td>
-									{m.label}
-									{m.isDefault && <span className="model-badge">默认</span>}
-								</td>
-								<td>{m.model ?? "—"}</td>
-								<td>
-									{m.contextWindow >= 1000
-										? `${Math.round(m.contextWindow / 1000)}k`
-										: m.contextWindow}
-								</td>
-								<td>
-									{m.pricing ? `${m.pricing.input}/${m.pricing.output}` : "—"}
-								</td>
-								<td>{m.source}</td>
-								<td style={{ whiteSpace: "nowrap" }}>
-									{!m.isDefault && (
-										<button onClick={() => defaultMutation.mutate(m.id)}>
-											设默认
-										</button>
-									)}
-									{(m.source === "file" || m.source === "runtime") && (
-										<button
-											className="danger"
-											onClick={() => removeMutation.mutate(m.id)}
-										>
-											删除
-										</button>
-									)}
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
+				<div className="overflow-hidden rounded-md border border-border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>模型</TableHead>
+								<TableHead>上游模型</TableHead>
+								<TableHead className="text-right">上下文</TableHead>
+								<TableHead className="text-right">定价 $/M</TableHead>
+								<TableHead>来源</TableHead>
+								<TableHead className="w-0" />
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{models.map((m) => (
+								<TableRow key={m.id}>
+									<TableCell className="font-mono">
+										<span className="flex items-center gap-1.5">
+											{m.label}
+											{m.isDefault && <Badge variant="accent">默认</Badge>}
+										</span>
+									</TableCell>
+									<TableCell className="max-w-[150px] truncate font-mono text-muted-foreground">
+										{m.model ?? "—"}
+									</TableCell>
+									<TableCell className="text-right font-mono tnum">
+										{m.contextWindow >= 1000
+											? `${Math.round(m.contextWindow / 1000)}k`
+											: m.contextWindow}
+									</TableCell>
+									<TableCell className="text-right font-mono tnum">
+										{m.pricing ? `${m.pricing.input}/${m.pricing.output}` : "—"}
+									</TableCell>
+									<TableCell className="text-muted-foreground">
+										{m.source}
+									</TableCell>
+									<TableCell>
+										<span className="flex items-center justify-end gap-1 whitespace-nowrap">
+											{!m.isDefault && (
+												<Button
+													onClick={() => defaultMutation.mutate(m.id)}
+													size="xs"
+													variant="outline"
+												>
+													设默认
+												</Button>
+											)}
+											{(m.source === "file" || m.source === "runtime") && (
+												<Button
+													className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+													onClick={() => removeMutation.mutate(m.id)}
+													size="xs"
+													variant="ghost"
+												>
+													删除
+												</Button>
+											)}
+										</span>
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
+				</div>
 
 				{/* 新增模型表单 */}
-				<h3 style={{ marginTop: 16 }}>新增模型</h3>
-				<div className="model-form">
-					<input
-						onChange={(e) => set({ id: e.target.value.trim() })}
-						placeholder="id（如 deepseek）"
-						value={form.id}
-					/>
-					<input
-						onChange={(e) => set({ model: e.target.value.trim() })}
-						placeholder="上游模型名（如 deepseek-chat）"
-						value={form.model}
-					/>
-					<input
-						onChange={(e) => set({ baseURL: e.target.value.trim() })}
-						placeholder="Base URL（如 https://api.deepseek.com/v1）"
-						style={{ gridColumn: "span 2" }}
-						value={form.baseURL}
-					/>
-					<input
-						onChange={(e) => set({ apiKey: e.target.value.trim() })}
-						placeholder="API Key"
-						type="password"
-						value={form.apiKey}
-					/>
-					<input
-						onChange={(e) => set({ label: e.target.value })}
-						placeholder="显示名（可选）"
-						value={form.label ?? ""}
-					/>
-					<input
-						onChange={(e) =>
-							set({
-								contextWindow: e.target.value
-									? Number(e.target.value)
-									: undefined,
-							})
-						}
-						placeholder="上下文窗口（可选，默认 128000）"
-						type="number"
-						value={form.contextWindow ?? ""}
-					/>
-					<div style={{ alignItems: "center", display: "flex", gap: 4 }}>
-						<input
+				<div className="label-mono text-faint">新增模型</div>
+				<div className="grid grid-cols-2 gap-3">
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="mm-id">
+							ID
+						</Label>
+						<Input
+							id="mm-id"
+							onChange={(e) => set({ id: e.target.value.trim() })}
+							placeholder="如 deepseek"
+							value={form.id}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="mm-model">
+							上游模型
+						</Label>
+						<Input
+							id="mm-model"
+							onChange={(e) => set({ model: e.target.value.trim() })}
+							placeholder="如 deepseek-chat"
+							value={form.model}
+						/>
+					</div>
+					<div className="col-span-2 flex flex-col gap-1.5">
+						<Label className={labelClass} htmlFor="mm-base-url">
+							Base URL
+						</Label>
+						<Input
+							id="mm-base-url"
+							onChange={(e) => set({ baseURL: e.target.value.trim() })}
+							placeholder="https://api.deepseek.com/v1"
+							value={form.baseURL}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="mm-api-key">
+							API Key
+						</Label>
+						<Input
+							id="mm-api-key"
+							onChange={(e) => set({ apiKey: e.target.value.trim() })}
+							type="password"
+							value={form.apiKey}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="mm-label">
+							显示名（可选）
+						</Label>
+						<Input
+							id="mm-label"
+							onChange={(e) => set({ label: e.target.value })}
+							value={form.label ?? ""}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="mm-ctx">
+							上下文窗口（默认 128000）
+						</Label>
+						<Input
+							id="mm-ctx"
 							onChange={(e) =>
 								set({
-									pricing: {
-										input: Number(e.target.value) || 0,
-										output: form.pricing?.output ?? 0,
-									},
+									contextWindow: e.target.value
+										? Number(e.target.value)
+										: undefined,
 								})
 							}
-							placeholder="输入价 $/M"
-							step="0.01"
-							style={{ width: "50%" }}
 							type="number"
-							value={form.pricing?.input ?? ""}
+							value={form.contextWindow ?? ""}
 						/>
-						<input
-							onChange={(e) =>
-								set({
-									pricing: {
-										input: form.pricing?.input ?? 0,
-										output: Number(e.target.value) || 0,
-									},
-								})
-							}
-							placeholder="输出价 $/M"
-							step="0.01"
-							style={{ width: "50%" }}
-							type="number"
-							value={form.pricing?.output ?? ""}
-						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass}>定价 $/M（可选）</Label>
+						<div className="grid grid-cols-2 gap-1.5">
+							<Input
+								onChange={(e) =>
+									set({
+										pricing: {
+											input: Number(e.target.value) || 0,
+											output: form.pricing?.output ?? 0,
+										},
+									})
+								}
+								placeholder="输入价"
+								step="0.01"
+								type="number"
+								value={form.pricing?.input ?? ""}
+							/>
+							<Input
+								onChange={(e) =>
+									set({
+										pricing: {
+											input: form.pricing?.input ?? 0,
+											output: Number(e.target.value) || 0,
+										},
+									})
+								}
+								placeholder="输出价"
+								step="0.01"
+								type="number"
+								value={form.pricing?.output ?? ""}
+							/>
+						</div>
 					</div>
 				</div>
 
 				{error && (
-					<div style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>
+					<div className="font-mono text-[11.5px] text-destructive">
 						{error}
 					</div>
 				)}
 
-				<div className="approval-actions" style={{ marginTop: 16 }}>
-					<button onClick={onClose}>关闭</button>
-					<button
-						className="primary"
+				<DialogFooter>
+					<Button onClick={onClose} variant="outline">
+						关闭
+					</Button>
+					<Button
 						disabled={
 							addMutation.isPending ||
 							!form.id ||
@@ -245,9 +317,9 @@ export function ModelManager({ open, onClose }: Props) {
 						onClick={() => addMutation.mutate()}
 					>
 						{addMutation.isPending ? "保存中…" : "添加模型"}
-					</button>
-				</div>
-			</div>
-		</div>
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }

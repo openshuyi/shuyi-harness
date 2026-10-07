@@ -2,9 +2,36 @@
  * 权限规则管理面板（M3）：查看/新增/删除用户配置规则。
  * - 全局规则：~/.agent/permissions.json；项目规则：<cwd>/.agent/permissions.json（项目级优先命中）
  * - 裁决顺序：内置敏感拒绝 → 代理声明 → 用户配置（项目→全局）→ 会话内记住 → 工具级+sandbox → 默认拒绝
- * 风格与 AgentManager / ModelManager 一致。
+ * 墨仪 §09/§19/§20：Dialog + mono 表格（decision 语义 Badge）+ Label 置上的表单。
  */
 
+import { Badge } from "@shuyi-harness/ui/components/ui/badge";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@shuyi-harness/ui/components/ui/dialog";
+import { Input } from "@shuyi-harness/ui/components/ui/input";
+import { Label } from "@shuyi-harness/ui/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@shuyi-harness/ui/components/ui/select";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@shuyi-harness/ui/components/ui/table";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -33,6 +60,15 @@ const DECISION_LABEL: Record<string, string> = {
 	allow: "允许",
 	ask: "询问",
 	deny: "拒绝",
+};
+
+const DECISION_VARIANT: Record<
+	PermissionRuleItem["decision"],
+	"success" | "warning" | "destructive"
+> = {
+	allow: "success",
+	ask: "warning",
+	deny: "destructive",
 };
 
 const EMPTY_FORM = {
@@ -109,129 +145,178 @@ export function PermissionManager({ open, onClose, cwd }: Props) {
 		onSuccess: invalidate,
 	});
 
-	if (!open) return null;
-
 	const renderTable = (
 		rules: PermissionRuleItem[],
 		scope: "project" | "global"
 	) => (
-		<table className="model-table">
-			<thead>
-				<tr>
-					<th>工具</th>
-					<th>模式</th>
-					<th>类型</th>
-					<th>裁决</th>
-					<th></th>
-				</tr>
-			</thead>
-			<tbody>
-				{rules.length === 0 && (
-					<tr>
-						<td colSpan={5} style={{ color: "var(--text-dim)" }}>
-							（无规则）
-						</td>
-					</tr>
-				)}
-				{rules.map((r) => (
-					<tr key={`${scope}-${r.index}`}>
-						<td>{r.tool}</td>
-						<td>
-							<code className="remember-pattern">{r.pattern}</code>
-						</td>
-						<td>{r.patternType}</td>
-						<td>{DECISION_LABEL[r.decision] ?? r.decision}</td>
-						<td style={{ whiteSpace: "nowrap" }}>
-							<button
-								className="danger"
-								onClick={() => removeMutation.mutate({ index: r.index, scope })}
-							>
-								删除
-							</button>
-						</td>
-					</tr>
-				))}
-			</tbody>
-		</table>
+		<div className="overflow-hidden rounded-md border border-border">
+			<Table>
+				<TableHeader>
+					<TableRow>
+						<TableHead>工具</TableHead>
+						<TableHead>模式</TableHead>
+						<TableHead>类型</TableHead>
+						<TableHead>裁决</TableHead>
+						<TableHead className="w-0" />
+					</TableRow>
+				</TableHeader>
+				<TableBody>
+					{rules.length === 0 && (
+						<TableRow>
+							<TableCell className="py-4 text-center text-faint" colSpan={5}>
+								（无规则）
+							</TableCell>
+						</TableRow>
+					)}
+					{rules.map((r) => (
+						<TableRow key={`${scope}-${r.index}`}>
+							<TableCell className="font-mono">{r.tool}</TableCell>
+							<TableCell>
+								<code className="font-mono text-[12px]">{r.pattern}</code>
+							</TableCell>
+							<TableCell className="label-mono text-faint">
+								{r.patternType}
+							</TableCell>
+							<TableCell>
+								<Badge variant={DECISION_VARIANT[r.decision]}>
+									{DECISION_LABEL[r.decision] ?? r.decision}
+								</Badge>
+							</TableCell>
+							<TableCell>
+								<Button
+									className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+									onClick={() =>
+										removeMutation.mutate({ index: r.index, scope })
+									}
+									size="xs"
+									variant="ghost"
+								>
+									删除
+								</Button>
+							</TableCell>
+						</TableRow>
+					))}
+				</TableBody>
+			</Table>
+		</div>
 	);
 
-	return (
-		<div className="approval-overlay" onClick={onClose}>
-			<div
-				className="approval-dialog"
-				onClick={(e) => e.stopPropagation()}
-				style={{ width: 680 }}
-			>
-				<h3>权限规则</h3>
-				<div className="risk">
-					命中即裁决，顺序：项目规则 → 全局规则。glob 支持 * 与 **（不支持 !
-					否定）；含 *?&#123;&#125;[] 的写法自动按 glob 处理，否则按前缀匹配。
-				</div>
+	const fieldClass = "flex flex-col gap-1.5";
+	const labelClass = "text-[12.5px] font-medium text-foreground";
 
-				<h3 style={{ marginTop: 8 }}>项目规则（.agent/permissions.json）</h3>
+	return (
+		<Dialog onOpenChange={(o) => !o && onClose()} open={open}>
+			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[680px]">
+				<DialogHeader>
+					<DialogTitle>权限规则</DialogTitle>
+					<DialogDescription>
+						命中即裁决，顺序：项目规则 → 全局规则。glob 支持 * 与 **（不支持 !
+						否定）；含 *?&#123;&#125;[] 的写法自动按 glob 处理，否则按前缀匹配。
+					</DialogDescription>
+				</DialogHeader>
+
+				<div className="label-mono text-faint">
+					项目规则（.agent/permissions.json）
+				</div>
 				{renderTable(data?.project ?? [], "project")}
 
-				<h3 style={{ marginTop: 16 }}>全局规则（~/.agent/permissions.json）</h3>
+				<div className="label-mono text-faint">
+					全局规则（~/.agent/permissions.json）
+				</div>
 				{renderTable(data?.global ?? [], "global")}
 
-				<h3 style={{ marginTop: 16 }}>新增规则</h3>
-				<div className="model-form">
-					<select
-						onChange={(e) =>
-							setForm((f) => ({
-								...f,
-								scope: e.target.value as "project" | "global",
-							}))
-						}
-						value={form.scope}
-					>
-						<option value="project">写入项目配置</option>
-						<option value="global">写入全局配置</option>
-					</select>
-					<input
-						onChange={(e) => setForm((f) => ({ ...f, tool: e.target.value }))}
-						placeholder="工具名（* = 全部，如 bash / write）"
-						value={form.tool}
-					/>
-					<input
-						onChange={(e) =>
-							setForm((f) => ({ ...f, pattern: e.target.value }))
-						}
-						placeholder="模式：tests/**、rm -rf *、src/ …"
-						value={form.pattern}
-					/>
-					<select
-						onChange={(e) =>
-							setForm((f) => ({
-								...f,
-								decision: e.target.value as "allow" | "ask" | "deny",
-							}))
-						}
-						value={form.decision}
-					>
-						<option value="allow">允许</option>
-						<option value="ask">询问</option>
-						<option value="deny">拒绝</option>
-					</select>
+				<div className="label-mono text-faint">新增规则</div>
+				<div className="grid grid-cols-2 gap-3">
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="pm-scope">
+							写入位置
+						</Label>
+						<Select
+							onValueChange={(v) =>
+								setForm((f) => ({
+									...f,
+									scope: (v as "project" | "global") ?? "project",
+								}))
+							}
+							value={form.scope}
+						>
+							<SelectTrigger className="w-full" id="pm-scope">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="project">写入项目配置</SelectItem>
+								<SelectItem value="global">写入全局配置</SelectItem>
+							</SelectContent>
+						</Select>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="pm-tool">
+							工具名
+						</Label>
+						<Input
+							id="pm-tool"
+							onChange={(e) => setForm((f) => ({ ...f, tool: e.target.value }))}
+							placeholder="* = 全部，如 bash / write"
+							value={form.tool}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="pm-pattern">
+							模式
+						</Label>
+						<Input
+							className="font-mono"
+							id="pm-pattern"
+							onChange={(e) =>
+								setForm((f) => ({ ...f, pattern: e.target.value }))
+							}
+							placeholder="tests/**、rm -rf *、src/ …"
+							value={form.pattern}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="pm-decision">
+							裁决
+						</Label>
+						<Select
+							onValueChange={(v) =>
+								setForm((f) => ({
+									...f,
+									decision: (v as "allow" | "ask" | "deny") ?? "allow",
+								}))
+							}
+							value={form.decision}
+						>
+							<SelectTrigger className="w-full" id="pm-decision">
+								<SelectValue />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="allow">允许</SelectItem>
+								<SelectItem value="ask">询问</SelectItem>
+								<SelectItem value="deny">拒绝</SelectItem>
+							</SelectContent>
+						</Select>
+					</div>
 				</div>
 
 				{error && (
-					<div style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>
+					<div className="font-mono text-[11.5px] text-destructive">
 						{error}
 					</div>
 				)}
 
-				<div className="approval-actions" style={{ marginTop: 16 }}>
-					<button onClick={onClose}>关闭</button>
-					<button
-						className="primary"
+				<DialogFooter>
+					<Button onClick={onClose} variant="outline">
+						关闭
+					</Button>
+					<Button
 						disabled={addMutation.isPending || !form.pattern.trim()}
 						onClick={() => addMutation.mutate()}
 					>
 						{addMutation.isPending ? "保存中…" : "保存规则"}
-					</button>
-				</div>
-			</div>
-		</div>
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }

@@ -1,10 +1,38 @@
 /**
  * 代理管理面板（M2）：查看全部代理定义（builtin/user/project/runtime），
  * 增删 runtime 代理。数据来自 GET /api/agents，增删走 PUT/DELETE /api/agents/:name。
- * 风格与 ModelManager 一致。
+ * 墨仪 §09/§19/§20：Dialog + mono 表格 + Label 置上的表单。
  */
 
 import type { AgentInfo, UpsertAgentRequest } from "@shuyi-harness/types";
+import { Badge } from "@shuyi-harness/ui/components/ui/badge";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from "@shuyi-harness/ui/components/ui/dialog";
+import { Input } from "@shuyi-harness/ui/components/ui/input";
+import { Label } from "@shuyi-harness/ui/components/ui/label";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@shuyi-harness/ui/components/ui/select";
+import {
+	Table,
+	TableBody,
+	TableCell,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "@shuyi-harness/ui/components/ui/table";
+import { Textarea } from "@shuyi-harness/ui/components/ui/textarea";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchJsonArray } from "../core/api.js";
@@ -110,126 +138,176 @@ export function AgentManager({ open, onClose, cwd }: Props) {
 		onSuccess: invalidate,
 	});
 
-	if (!open) return null;
 	const set = (patch: Partial<typeof EMPTY_FORM>) =>
 		setForm((f) => ({ ...f, ...patch }));
 
+	const fieldClass = "flex flex-col gap-1.5";
+	const labelClass = "text-[12.5px] font-medium text-foreground";
+
 	return (
-		<div className="approval-overlay" onClick={onClose}>
-			<div
-				className="approval-dialog"
-				onClick={(e) => e.stopPropagation()}
-				style={{ width: 680 }}
-			>
-				<h3>代理管理</h3>
-				<div className="risk">
-					代理 = 提示词 + 模型 +
-					工具面。内置/全局/项目来源只读；运行时定义保存在
-					~/.agent/agents.json。
+		<Dialog onOpenChange={(o) => !o && onClose()} open={open}>
+			<DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-[680px]">
+				<DialogHeader>
+					<DialogTitle>代理管理</DialogTitle>
+					<DialogDescription>
+						代理 = 提示词 + 模型 +
+						工具面。内置/全局/项目来源只读；运行时定义保存在
+						~/.agent/agents.json。
+					</DialogDescription>
+				</DialogHeader>
+
+				<div className="overflow-hidden rounded-md border border-border">
+					<Table>
+						<TableHeader>
+							<TableRow>
+								<TableHead>名称</TableHead>
+								<TableHead>描述</TableHead>
+								<TableHead>工具面</TableHead>
+								<TableHead>模型</TableHead>
+								<TableHead>来源</TableHead>
+								<TableHead className="w-0" />
+							</TableRow>
+						</TableHeader>
+						<TableBody>
+							{agents.map((a) => (
+								<TableRow key={`${a.source}-${a.name}`}>
+									<TableCell className="font-mono">
+										<span className="flex items-center gap-1.5">
+											{a.name}
+											{a.modeDefault && (
+												<Badge variant="accent">{a.modeDefault}</Badge>
+											)}
+										</span>
+									</TableCell>
+									<TableCell
+										className="max-w-[180px] truncate text-muted-foreground"
+										title={a.system}
+									>
+										{a.description || "—"}
+									</TableCell>
+									<TableCell className="text-muted-foreground">
+										{toolsLabel(a.tools)}
+									</TableCell>
+									<TableCell className="font-mono text-muted-foreground">
+										{a.model ?? "继承"}
+									</TableCell>
+									<TableCell className="text-muted-foreground">
+										{SOURCE_LABEL[a.source]}
+									</TableCell>
+									<TableCell>
+										{a.source === "runtime" && (
+											<Button
+												className="text-destructive hover:bg-destructive-soft hover:text-destructive"
+												onClick={() => removeMutation.mutate(a.name)}
+												size="xs"
+												variant="ghost"
+											>
+												删除
+											</Button>
+										)}
+									</TableCell>
+								</TableRow>
+							))}
+						</TableBody>
+					</Table>
 				</div>
 
-				<table className="model-table">
-					<thead>
-						<tr>
-							<th>名称</th>
-							<th>描述</th>
-							<th>工具面</th>
-							<th>模型</th>
-							<th>来源</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						{agents.map((a) => (
-							<tr key={`${a.source}-${a.name}`}>
-								<td>
-									{a.name}
-									{a.modeDefault && (
-										<span className="model-badge">{a.modeDefault}</span>
-									)}
-								</td>
-								<td title={a.system}>{a.description || "—"}</td>
-								<td>{toolsLabel(a.tools)}</td>
-								<td>{a.model ?? "继承"}</td>
-								<td>{SOURCE_LABEL[a.source]}</td>
-								<td style={{ whiteSpace: "nowrap" }}>
-									{a.source === "runtime" && (
-										<button
-											className="danger"
-											onClick={() => removeMutation.mutate(a.name)}
-										>
-											删除
-										</button>
-									)}
-								</td>
-							</tr>
-						))}
-					</tbody>
-				</table>
-
-				<h3 style={{ marginTop: 16 }}>新增/覆盖运行时代理</h3>
-				<div className="model-form">
-					<input
-						onChange={(e) => set({ name: e.target.value.trim() })}
-						placeholder="name（不可与内置同名）"
-						value={form.name}
-					/>
-					<input
-						onChange={(e) => set({ description: e.target.value })}
-						placeholder="描述（可选）"
-						value={form.description ?? ""}
-					/>
-					<input
-						onChange={(e) => set({ toolsText: e.target.value })}
-						placeholder="工具面：all / readonly / 逗号分隔白名单"
-						value={form.toolsText}
-					/>
-					<input
-						onChange={(e) => set({ model: e.target.value.trim() })}
-						placeholder="模型覆盖（可选，缺省继承会话）"
-						value={form.model ?? ""}
-					/>
-					<select
-						onChange={(e) =>
-							set({
-								modeDefault: (e.target.value || undefined) as
-									| "plan"
-									| "build"
-									| undefined,
-							})
-						}
-						value={form.modeDefault ?? ""}
-					>
-						<option value="">模式语义：无（跟随会话）</option>
-						<option value="build">build（可写）</option>
-						<option value="plan">plan（只读）</option>
-					</select>
-					<textarea
-						onChange={(e) => set({ system: e.target.value })}
-						placeholder="系统提示（prompt）正文"
-						rows={4}
-						style={{ gridColumn: "span 2" }}
-						value={form.system ?? ""}
-					/>
+				<div className="label-mono text-faint">新增/覆盖运行时代理</div>
+				<div className="grid grid-cols-2 gap-3">
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="am-name">
+							name（不可与内置同名）
+						</Label>
+						<Input
+							id="am-name"
+							onChange={(e) => set({ name: e.target.value.trim() })}
+							value={form.name}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="am-desc">
+							描述（可选）
+						</Label>
+						<Input
+							id="am-desc"
+							onChange={(e) => set({ description: e.target.value })}
+							value={form.description ?? ""}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="am-tools">
+							工具面
+						</Label>
+						<Input
+							id="am-tools"
+							onChange={(e) => set({ toolsText: e.target.value })}
+							placeholder="all / readonly / 逗号分隔白名单"
+							value={form.toolsText}
+						/>
+					</div>
+					<div className={fieldClass}>
+						<Label className={labelClass} htmlFor="am-model">
+							模型覆盖（可选）
+						</Label>
+						<Input
+							id="am-model"
+							onChange={(e) => set({ model: e.target.value.trim() })}
+							placeholder="缺省继承会话"
+							value={form.model ?? ""}
+						/>
+					</div>
+					<div className="col-span-2 flex flex-col gap-1.5">
+						<Label className={labelClass} htmlFor="am-mode">
+							模式语义
+						</Label>
+						<Select
+							onValueChange={(v) =>
+								set({
+									modeDefault: (v as "build" | "plan" | null) ?? undefined,
+								})
+							}
+							value={form.modeDefault ?? null}
+						>
+							<SelectTrigger className="w-full" id="am-mode">
+								<SelectValue placeholder="无（跟随会话）" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="build">build（可写）</SelectItem>
+								<SelectItem value="plan">plan（只读）</SelectItem>
+							</SelectContent>
+						</Select>
+					</div>
+					<div className="col-span-2 flex flex-col gap-1.5">
+						<Label className={labelClass} htmlFor="am-system">
+							系统提示（prompt）正文
+						</Label>
+						<Textarea
+							id="am-system"
+							onChange={(e) => set({ system: e.target.value })}
+							rows={4}
+							value={form.system ?? ""}
+						/>
+					</div>
 				</div>
 
 				{error && (
-					<div style={{ color: "var(--red)", fontSize: 12, marginTop: 8 }}>
+					<div className="font-mono text-[11.5px] text-destructive">
 						{error}
 					</div>
 				)}
 
-				<div className="approval-actions" style={{ marginTop: 16 }}>
-					<button onClick={onClose}>关闭</button>
-					<button
-						className="primary"
+				<DialogFooter>
+					<Button onClick={onClose} variant="outline">
+						关闭
+					</Button>
+					<Button
 						disabled={upsertMutation.isPending || !form.name || !form.system}
 						onClick={() => upsertMutation.mutate()}
 					>
 						{upsertMutation.isPending ? "保存中…" : "保存代理"}
-					</button>
-				</div>
-			</div>
-		</div>
+					</Button>
+				</DialogFooter>
+			</DialogContent>
+		</Dialog>
 	);
 }

@@ -1,21 +1,29 @@
 /**
  * F10（v0.4）：内嵌预览面板——iframe 加载用户自填地址（按会话记忆），
  * 「发送给 Agent」把当前 URL（同源时含点选元素的 CSS 选择器）注入消息。
- * 本地优先：不预置任何远端地址。
+ * 本地优先：不预置任何远端地址。外壳由右栏 Tabs 提供。
  */
 
 import type { SessionRecord } from "@shuyi-harness/types";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import {
+	Empty,
+	EmptyDescription,
+	EmptyHeader,
+	EmptyMedia,
+	EmptyTitle,
+} from "@shuyi-harness/ui/components/ui/empty";
+import { Input } from "@shuyi-harness/ui/components/ui/input";
+import { CrosshairIcon, RotateCwIcon, SendIcon } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { type PaneSlot, useSessionStore } from "../core/store.js";
 
 export function PreviewPanel({
 	slot = "primary",
 	session,
-	onClose,
 }: {
 	slot?: PaneSlot;
 	session: SessionRecord;
-	onClose: () => void;
 }) {
 	const { sendMessage } = useSessionStore();
 	const storageKey = `shuyi-preview-url:${session.session_id}`;
@@ -59,15 +67,10 @@ export function PreviewPanel({
 	};
 
 	return (
-		<div className="side-panel preview-panel">
-			<div className="side-panel-head">
-				<span>预览</span>
-				<button className="side-panel-close" onClick={onClose} title="关闭">
-					×
-				</button>
-			</div>
-			<div className="preview-bar">
-				<input
+		<div className="flex h-full min-h-0 flex-col bg-background">
+			<div className="flex flex-none items-center gap-1.5 border-b bg-panel p-2">
+				<Input
+					className="h-8 flex-1 rounded-sm px-2.5 font-mono text-[12px]"
 					onChange={(e) => setUrl(e.target.value)}
 					onKeyDown={(e) => {
 						if (e.key === "Enter" && url.trim()) setLoaded(url.trim());
@@ -75,38 +78,63 @@ export function PreviewPanel({
 					placeholder="http://localhost:3000 …"
 					value={url}
 				/>
-				<button
+				<Button
+					aria-label="加载"
 					onClick={() => url.trim() && setLoaded(url.trim())}
+					size="icon-sm"
 					title="加载"
+					variant="outline"
 				>
-					↻
-				</button>
-				<button
+					<RotateCwIcon />
+				</Button>
+				<Button
+					aria-label="把当前 URL 发给 Agent"
 					disabled={!loaded}
 					onClick={() => void sendMessage(slot, `请查看预览页面：${loaded}`)}
+					size="icon-sm"
 					title="把当前 URL 发给 Agent"
+					variant="outline"
 				>
-					➤
-				</button>
-				<button
+					<SendIcon />
+				</Button>
+				<Button
 					disabled={!loaded || picking}
 					onClick={startPick}
+					size="sm"
 					title={
 						picking ? "点击页面元素…" : "点选元素发给 Agent（同源页面可用）"
 					}
+					variant={picking ? "default" : "outline"}
 				>
-					{picking ? "点选中…" : "⌖"}
-				</button>
+					{picking ? (
+						"点选中…"
+					) : (
+						<>
+							<CrosshairIcon />
+							点选
+						</>
+					)}
+				</Button>
 			</div>
 			{loaded ? (
 				<iframe
-					className="preview-frame"
+					className="h-full w-full flex-1"
 					ref={iframeRef}
 					src={loaded}
 					title="预览"
 				/>
 			) : (
-				<div className="changes-empty">输入本地开发服务地址后回车加载</div>
+				<Empty className="m-3 rounded-md">
+					<EmptyHeader>
+						<EmptyMedia>
+							<span className="grid size-[38px] rotate-[-4deg] place-items-center rounded-[5px] bg-seal font-serif text-[19px] font-bold text-seal-foreground">
+								览
+							</span>
+						</EmptyMedia>
+						<EmptyTitle>未加载页面</EmptyTitle>
+						<EmptyDescription>输入本地开发服务地址后回车加载</EmptyDescription>
+					</EmptyHeader>
+				</Empty>
 			)}
 		</div>
 	);

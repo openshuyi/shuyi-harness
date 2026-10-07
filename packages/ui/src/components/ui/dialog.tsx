@@ -29,7 +29,7 @@ function DialogOverlay({
 	return (
 		<DialogPrimitive.Backdrop
 			className={cn(
-				"data-open:fade-in-0 data-closed:fade-out-0 fixed inset-0 isolate z-50 bg-black/10 duration-100 data-closed:animate-out data-open:animate-in supports-backdrop-filter:backdrop-blur-xs",
+				"data-open:fade-in-0 data-closed:fade-out-0 fixed inset-0 isolate z-50 bg-overlay duration-200 data-closed:animate-out data-open:animate-in supports-backdrop-filter:backdrop-blur-[3px] supports-backdrop-filter:saturate-150",
 				className
 			)}
 			data-slot="dialog-overlay"
@@ -51,7 +51,7 @@ function DialogContent({
 			<DialogOverlay />
 			<DialogPrimitive.Popup
 				className={cn(
-					"data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-none bg-popover p-4 text-popover-foreground text-xs/relaxed outline-none ring-1 ring-foreground/10 duration-100 data-closed:animate-out data-open:animate-in sm:max-w-sm",
+					"data-open:fade-in-0 data-open:zoom-in-95 data-closed:fade-out-0 data-closed:zoom-out-95 surface-lift fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-line-strong bg-popover p-5 text-popover-foreground text-sm/relaxed duration-280 ease-(--ease-pop) outline-none data-closed:animate-out data-open:animate-in sm:max-w-sm",
 					className
 				)}
 				data-slot="dialog-content"
@@ -118,7 +118,7 @@ function DialogFooter({
 function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
 	return (
 		<DialogPrimitive.Title
-			className={cn("font-medium text-sm", className)}
+			className={cn("text-base leading-snug font-semibold", className)}
 			data-slot="dialog-title"
 			{...props}
 		/>

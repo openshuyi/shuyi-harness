@@ -1,10 +1,11 @@
 import { cn } from "cn";
 
+/* 墨仪 §03 快捷键胶囊 —— inset 底 + 发丝描边 + 底边加重（按键厚度感） */
 function Kbd({ className, ...props }: React.ComponentProps<"kbd">) {
 	return (
 		<kbd
 			className={cn(
-				"pointer-events-none inline-flex h-5 w-fit min-w-5 select-none items-center justify-center gap-1 rounded-none bg-muted in-data-[slot=tooltip-content]:bg-background/20 px-1 font-medium font-sans in-data-[slot=tooltip-content]:text-background text-muted-foreground text-xs dark:in-data-[slot=tooltip-content]:bg-background/10 [&_svg:not([class*='size-'])]:size-3",
+				"pointer-events-none inline-flex h-fit w-fit min-w-5 shrink-0 items-center justify-center gap-1 rounded-xs border border-border border-b-2 bg-inset px-1.5 py-0.5 font-mono text-[11px] font-medium text-muted-foreground in-data-[slot=tooltip-content]:bg-popover/60 in-data-[slot=tooltip-content]:text-foreground/80 [&_svg:not([class*='size-'])]:size-3",
 				className
 			)}
 			data-slot="kbd"

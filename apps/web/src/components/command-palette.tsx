@@ -1,8 +1,17 @@
 /**
- * F6（v0.4）：命令面板（Ctrl+K）——会话级与全局动作统一入口。
+ * 命令面板（墨仪 §12）：⌘K 一个入口覆盖全部动作。
+ * cmdk 内核——输入即过滤、↑↓ 导航、⏎ 执行、Esc 关闭。
  * 动作集合由 App 注入（需要切换主题/新建会话等上下文）。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+	Command,
+	CommandDialog,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from "@shuyi-harness/ui/components/ui/command";
 
 export interface PaletteAction {
 	hint?: string;
@@ -20,80 +29,40 @@ export function CommandPalette({
 	onClose: () => void;
 	actions: PaletteAction[];
 }) {
-	const [q, setQ] = useState("");
-	const [idx, setIdx] = useState(0);
-	const inputRef = useRef<HTMLInputElement>(null);
-
-	const filtered = useMemo(() => {
-		const kw = q.trim().toLowerCase();
-		if (!kw) return actions;
-		return actions.filter((a) =>
-			`${a.label} ${a.hint ?? ""}`.toLowerCase().includes(kw)
-		);
-	}, [actions, q]);
-
-	useEffect(() => {
-		if (open) {
-			setQ("");
-			setIdx(0);
-			setTimeout(() => inputRef.current?.focus(), 0);
-		}
-	}, [open]);
-
-	if (!open) return null;
-
-	const run = (a: PaletteAction) => {
-		onClose();
-		a.run();
-	};
-
 	return (
-		<div className="palette-backdrop" onMouseDown={onClose}>
-			<div className="command-palette" onMouseDown={(e) => e.stopPropagation()}>
-				<input
-					onChange={(e) => {
-						setQ(e.target.value);
-						setIdx(0);
-					}}
-					onKeyDown={(e) => {
-						if (e.key === "ArrowDown") {
-							e.preventDefault();
-							setIdx((i) => (i + 1) % Math.max(1, filtered.length));
-						} else if (e.key === "ArrowUp") {
-							e.preventDefault();
-							setIdx(
-								(i) => (i - 1 + filtered.length) % Math.max(1, filtered.length)
-							);
-						} else if (e.key === "Enter") {
-							e.preventDefault();
-							const a = filtered[Math.min(idx, filtered.length - 1)];
-							if (a) run(a);
-						} else if (e.key === "Escape") {
-							e.preventDefault();
-							onClose();
-						}
-					}}
-					placeholder="输入命令…（↑↓ 选择，Enter 执行）"
-					ref={inputRef}
-					value={q}
-				/>
-				<div className="palette-list">
-					{filtered.length === 0 && (
-						<div className="palette-empty">无匹配命令</div>
-					)}
-					{filtered.map((a, i) => (
-						<button
-							className={`palette-item ${i === idx ? "active" : ""}`}
-							key={a.id}
-							onClick={() => run(a)}
-							onMouseEnter={() => setIdx(i)}
-						>
-							<span>{a.label}</span>
-							{a.hint && <span className="palette-hint">{a.hint}</span>}
-						</button>
-					))}
-				</div>
-			</div>
-		</div>
+		<CommandDialog
+			description="输入命令或会话名…"
+			onOpenChange={(o) => {
+				if (!o) onClose();
+			}}
+			open={open}
+			title="命令面板"
+		>
+			<Command>
+				<CommandInput placeholder="输入命令…（↑↓ 选择，Enter 执行）" />
+				<CommandList>
+					<CommandEmpty>无匹配命令</CommandEmpty>
+					<CommandGroup heading="action">
+						{actions.map((a) => (
+							<CommandItem
+								key={a.id}
+								onSelect={() => {
+									onClose();
+									a.run();
+								}}
+								value={`${a.label} ${a.hint ?? ""}`}
+							>
+								<span>{a.label}</span>
+								{a.hint && (
+									<span className="ml-auto font-mono text-[11px] text-faint">
+										{a.hint}
+									</span>
+								)}
+							</CommandItem>
+						))}
+					</CommandGroup>
+				</CommandList>
+			</Command>
+		</CommandDialog>
 	);
 }

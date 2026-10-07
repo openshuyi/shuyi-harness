@@ -7,8 +7,8 @@ import {
 	Outlet,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
+import { ThemeProvider } from "@/components/theme-provider";
 import type { orpc } from "@/utils/orpc";
-
 import "../index.css";
 
 export interface RouterAppContext {
@@ -33,12 +33,17 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 
 function RootComponent() {
 	return (
-		<>
+		<ThemeProvider
+			attribute="data-theme"
+			defaultTheme="dark"
+			enableSystem
+			storageKey="shuyi-theme"
+		>
 			<HeadContent />
 			<Outlet />
 			<Toaster richColors />
 			<TanStackRouterDevtools position="bottom-left" />
 			<ReactQueryDevtools buttonPosition="bottom-right" position="bottom" />
-		</>
+		</ThemeProvider>
 	);
 }

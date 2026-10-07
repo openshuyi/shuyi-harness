@@ -25,7 +25,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
 			}}
 			style={
 				{
-					"--border-radius": "var(--radius)",
+					"--border-radius": "8px",
 					"--normal-bg": "var(--popover)",
 					"--normal-border": "var(--border)",
 					"--normal-text": "var(--popover-foreground)",

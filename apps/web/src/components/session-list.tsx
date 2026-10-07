@@ -1,5 +1,29 @@
+/**
+ * 会话列表（墨仪 §11）：唯一常驻导航。
+ * 分组头 label-mono + 计数；置顶项 2px accent 竖线；选中项 accent-soft 底；
+ * meta 行是仪器读数（mono tabular）。状态点 = 系统指示灯。
+ */
 import type { AgentInfo, SessionRecord } from "@shuyi-harness/types";
+import { Button } from "@shuyi-harness/ui/components/ui/button";
+import { Kbd } from "@shuyi-harness/ui/components/ui/kbd";
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from "@shuyi-harness/ui/components/ui/select";
+import { StatusDot } from "@shuyi-harness/ui/components/ui/status-dot";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	CheckIcon,
+	ColumnsIcon,
+	GitBranchIcon,
+	PinIcon,
+	PlusIcon,
+	SearchIcon,
+	XIcon,
+} from "lucide-react";
 import { useState } from "react";
 import { fetchJson, fetchJsonArray } from "../core/api.js";
 import { useSessionStore } from "../core/store.js";
@@ -17,6 +41,23 @@ interface SearchHit {
 
 async function fetchSessions(): Promise<SessionRecord[]> {
 	return fetchJsonArray<SessionRecord>("/api/sessions");
+}
+
+/** 会话四态 → 指示灯（§04：进行中 pulse / 等待审批 pulse / 空闲 / 错误） */
+function sessionTone(status: string): {
+	pulse: boolean;
+	tone: "accent" | "danger" | "idle" | "warning";
+} {
+	switch (status) {
+		case "running":
+			return { pulse: true, tone: "accent" };
+		case "awaiting_approval":
+			return { pulse: true, tone: "warning" };
+		case "error":
+			return { pulse: false, tone: "danger" };
+		default:
+			return { pulse: false, tone: "idle" };
+	}
 }
 
 export function SessionList() {
@@ -107,9 +148,6 @@ export function SessionList() {
 		}
 	};
 
-	const [theme, setTheme] = useState<string>(
-		() => document.documentElement.dataset.theme ?? "dark"
-	);
 	/** F8（v0.4）：置顶会话（localStorage 持久） */
 	const [pins, setPins] = useState<string[]>(
 		() => JSON.parse(localStorage.getItem("shuyi-pins") ?? "[]") as string[]
@@ -123,92 +161,229 @@ export function SessionList() {
 			return next;
 		});
 	};
-	const toggleTheme = () => {
-		const next = theme === "dark" ? "light" : "dark";
-		document.documentElement.dataset.theme = next;
-		localStorage.setItem("shuyi-theme", next);
-		setTheme(next);
+
+	const renderItem = (s: SessionRecord) => {
+		// M5：聚合流驱动的实时状态叠加（非可见会话），查询结果兜底
+		const status = liveStatus[s.session_id] ?? s.status;
+		const tone = sessionTone(status);
+		const alerted = s.session_id in approvalAlerts;
+		const isSplit = split?.session_id === s.session_id;
+		const active = current?.session_id === s.session_id;
+		const pinned = pins.includes(s.session_id);
+		return (
+			<div
+				className={`group relative flex cursor-pointer items-start gap-2.5 rounded-sm px-2.5 py-2 transition-colors hover:bg-card ${
+					active ? "bg-accent" : ""
+				} ${alerted ? "ring-1 ring-warning" : ""}`}
+				key={s.session_id}
+				onClick={() => selectSession(s)}
+			>
+				{/* 置顶项 2px accent 竖线 */}
+				{pinned && (
+					<span className="absolute top-2 bottom-2 left-0 w-0.5 rounded-full bg-primary" />
+				)}
+				<StatusDot className="mt-[5px]" pulse={tone.pulse} tone={tone.tone} />
+				<div className="min-w-0 flex-1">
+					<div className="flex items-center gap-1">
+						<span
+							className={`truncate text-[13px] ${active ? "text-primary" : "text-foreground"}`}
+						>
+							{s.title}
+						</span>
+						<span className="flex-1" />
+						{/* F8：置顶 + M5：分栏（悬浮显形） */}
+						<span className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+							<button
+								className={`grid size-5 place-items-center rounded-xs text-faint hover:bg-accent hover:text-foreground ${pinned ? "text-primary opacity-100!" : ""}`}
+								onClick={(e) => {
+									e.stopPropagation();
+									togglePin(s.session_id);
+								}}
+								title={pinned ? "取消置顶" : "置顶"}
+								type="button"
+							>
+								<PinIcon className="size-3" />
+							</button>
+							{!active && (
+								<button
+									className={`grid size-5 place-items-center rounded-xs text-faint hover:bg-accent hover:text-foreground ${isSplit ? "text-primary opacity-100!" : ""}`}
+									onClick={(e) => {
+										e.stopPropagation();
+										if (isSplit) closeSplit();
+										else openSplit(s);
+									}}
+									title={isSplit ? "收起分栏" : "在右栏并行打开"}
+									type="button"
+								>
+									<ColumnsIcon className="size-3" />
+								</button>
+							)}
+						</span>
+					</div>
+					<div className="label-mono tnum mt-0.5 truncate text-[10.5px] text-faint">
+						{s.agent ?? "build"} · {s.model}
+						{(s.activeCallCount ?? 0) > 0 && <> · ⏸{s.activeCallCount}</>}
+						{s.usage &&
+							(s.usage.prompt_tokens > 0 || s.usage.completion_tokens > 0) && (
+								<>
+									{" "}
+									·{" "}
+									{(
+										s.usage.prompt_tokens + s.usage.completion_tokens
+									).toLocaleString()}{" "}
+									tok
+								</>
+							)}
+						{s.usage?.cost_usd != null && (
+							<> · ${s.usage.cost_usd.toFixed(3)}</>
+						)}
+					</div>
+					{/* P1-6：worktree 徽标 + 合并/放弃（空闲时） */}
+					{s.worktree && (
+						<div
+							className="mt-1 flex items-center gap-1.5"
+							onClick={(e) => e.stopPropagation()}
+						>
+							<span
+								className="inline-flex items-center gap-1 rounded-xs bg-inset px-1.5 py-0.5 font-mono text-[10.5px] text-info"
+								title={s.worktree.worktree_path}
+							>
+								<GitBranchIcon className="size-2.5" />
+								{s.worktree.branch}
+							</span>
+							{status === "idle" && (
+								<>
+									<button
+										className="inline-flex items-center gap-0.5 rounded-xs px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+										onClick={async () => {
+											const r = await fetchJson<{
+												ok: boolean;
+												error?: string;
+											}>(`/api/sessions/${s.session_id}/worktree/merge`, {
+												method: "POST",
+											}).catch((e) => ({
+												error: String(e),
+												ok: false,
+											}));
+											if (!r.ok) alert(`合并失败：${r.error ?? "未知错误"}`);
+											void queryClient.invalidateQueries({
+												queryKey: ["sessions"],
+											});
+										}}
+										title="把 worktree 分支合并回主分支并清理"
+										type="button"
+									>
+										<CheckIcon className="size-2.5" />
+										合并
+									</button>
+									<button
+										className="inline-flex items-center gap-0.5 rounded-xs px-1.5 py-0.5 font-mono text-[10.5px] text-muted-foreground transition-colors hover:bg-destructive-soft hover:text-destructive"
+										onClick={async () => {
+											if (!confirm("放弃此 worktree？未合并的改动将丢失。"))
+												return;
+											await fetch(
+												`/api/sessions/${s.session_id}/worktree/discard`,
+												{ method: "POST" }
+											);
+											void queryClient.invalidateQueries({
+												queryKey: ["sessions"],
+											});
+										}}
+										title="放弃 worktree（未合并改动将丢失）"
+										type="button"
+									>
+										<XIcon className="size-2.5" />
+										放弃
+									</button>
+								</>
+							)}
+						</div>
+					)}
+				</div>
+			</div>
+		);
 	};
 
 	return (
-		<div className="sidebar">
-			<div className="sidebar-header">
-				<div
-					style={{
-						alignItems: "center",
-						display: "flex",
-						justifyContent: "space-between",
-					}}
-				>
-					<h1>
-						<span className="brand-dot">◆</span>Shuyi Agent
-					</h1>
-					<button
-						className="theme-toggle"
-						onClick={toggleTheme}
-						title={theme === "dark" ? "切换到纸（浅色）" : "切换到墨（深色）"}
-					>
-						{theme === "dark" ? "☀" : "☾"}
-					</button>
-				</div>
+		<aside className="flex w-[236px] flex-none flex-col overflow-hidden border-r bg-panel">
+			<div className="flex flex-none flex-col gap-1.5 p-2">
+				{/* 新会话：cwd + 代理 + worktree + 按钮 */}
 				<input
-					className="search-box"
+					className="h-[30px] w-full rounded-sm border border-input bg-inset px-2.5 text-xs text-foreground outline-none transition-colors placeholder:text-faint hover:border-line-strong focus:border-line-strong focus:ring-[3px] focus:ring-ring"
 					onChange={(e) => setNewCwd(e.target.value)}
-					placeholder="工作区绝对路径，如 /Users/you/project"
-					style={{ boxSizing: "border-box", marginBottom: 6, width: "100%" }}
+					placeholder="工作区绝对路径，如 ~/project"
 					title="新会话的工作区（agent 的工作目录，写操作限制在内；支持 ~ 前缀）"
 					value={newCwd}
 				/>
-				<div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
-					<button
-						className="primary"
+				<div className="flex items-center gap-1.5">
+					<Button
+						className="h-[30px] flex-1"
+						data-action="new-session"
 						disabled={createMutation.isPending || newCwd.trim().length === 0}
 						onClick={() => createMutation.mutate()}
-						style={{ flex: 1 }}
+						size="sm"
 					>
-						+ 新会话
-					</button>
-					{/* M5：选择起始代理 */}
-					<select
-						onChange={(e) => setNewAgent(e.target.value)}
-						style={{ maxWidth: 110 }}
-						title="新会话的起始代理"
+						<PlusIcon />
+						新会话
+					</Button>
+					<Select
+						onValueChange={(v) => {
+							if (v) setNewAgent(v);
+						}}
 						value={newAgent}
 					>
-						{[...new Set(["build", ...agents.map((a) => a.name)])].map(
-							(name) => (
-								<option key={name} value={name}>
-									{name}
-								</option>
-							)
-						)}
-					</select>
+						<SelectTrigger
+							className="h-[30px] min-w-0 rounded-sm px-2 font-mono text-[11px]"
+							size="sm"
+							title="新会话的起始代理"
+						>
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent alignItemWithTrigger={false} className="min-w-32">
+							{[...new Set(["build", ...agents.map((a) => a.name)])].map(
+								(name) => (
+									<SelectItem key={name} value={name}>
+										{name}
+									</SelectItem>
+								)
+							)}
+						</SelectContent>
+					</Select>
 				</div>
 				{/* P1-6：worktree 隔离开关 */}
 				<label
-					className="worktree-toggle"
+					className="flex cursor-pointer items-center gap-2 rounded-sm px-1 py-0.5 text-[11.5px] text-muted-foreground transition-colors hover:text-foreground"
 					title="在独立 git worktree 中运行会话：并行会话写文件互不干扰，完成后可合并回主分支"
 				>
 					<input
 						checked={newWorktree}
+						className="size-3 accent-[var(--primary)]"
 						onChange={(e) => setNewWorktree(e.target.checked)}
 						type="checkbox"
 					/>
-					⎇ worktree 隔离
+					<GitBranchIcon className="size-3" />
+					worktree 隔离
 				</label>
-				<input
-					className="search-box"
-					onChange={(e) => {
-						setQuery(e.target.value);
-						setSearching(e.target.value.trim().length > 0);
-					}}
-					placeholder="搜索历史消息…"
-					value={query}
-				/>
+				{/* §11 search：搜索历史消息 */}
+				<div className="flex h-[30px] items-center gap-2 rounded-sm border border-input bg-inset px-2.5 text-faint">
+					<SearchIcon className="size-3.5 shrink-0" />
+					<input
+						className="min-w-0 flex-1 bg-transparent text-xs text-foreground outline-none placeholder:text-faint"
+						onChange={(e) => {
+							setQuery(e.target.value);
+							setSearching(e.target.value.trim().length > 0);
+						}}
+						placeholder="搜索历史消息…"
+						value={query}
+					/>
+					<Kbd className="text-[10px]">⌘K</Kbd>
+				</div>
 			</div>
-			<div className="session-list">
+
+			{/* 列表主体 */}
+			<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
 				{sessionsFailed && (
-					<div style={{ color: "#f87171", fontSize: 12, padding: 12 }}>
+					<div className="m-2 rounded-sm border-l-2 border-l-destructive bg-destructive-soft p-3 text-[11.5px] leading-relaxed text-muted-foreground">
 						无法连接后端服务（localhost:4351）。
 						<br />
 						{sessionsError instanceof Error
@@ -221,15 +396,19 @@ export function SessionList() {
 				)}
 				{searching && query.trim() ? (
 					<>
-						<div className="search-hint">{hits.length} 条命中</div>
+						<div className="label-mono px-2.5 pt-2 pb-1 text-faint">
+							{hits.length} hits
+						</div>
 						{hits.map((h, i) => (
 							<div
-								className="session-item"
+								className="cursor-pointer rounded-sm px-2.5 py-2 transition-colors hover:bg-card"
 								key={i}
 								onClick={() => jumpTo(h.session_id)}
 							>
-								<div>{h.session_title}</div>
-								<div className="meta">{h.snippet}</div>
+								<div className="truncate text-[13px]">{h.session_title}</div>
+								<div className="mt-0.5 truncate text-[11px] text-faint">
+									{h.snippet}
+								</div>
 							</div>
 						))}
 					</>
@@ -237,137 +416,8 @@ export function SessionList() {
 					<>
 						{(() => {
 							// F8：分组渲染——置顶 / 进行中 / 空闲
-							const renderItem = (s: SessionRecord) => {
-								// M5：聚合流驱动的实时状态叠加（非可见会话），查询结果兜底
-								const status = liveStatus[s.session_id] ?? s.status;
-								const alerted = s.session_id in approvalAlerts;
-								const isSplit = split?.session_id === s.session_id;
-								return (
-									<div
-										className={`session-item ${current?.session_id === s.session_id ? "active" : ""} ${alerted ? "alert-flash" : ""}`}
-										key={s.session_id}
-										onClick={() => selectSession(s)}
-									>
-										<div>
-											<span className={`status-dot ${status}`} />
-											{s.title}
-											{/* F8：置顶按钮 */}
-											<button
-												className={`pin-btn ${pins.includes(s.session_id) ? "on" : ""}`}
-												onClick={(e) => {
-													e.stopPropagation();
-													togglePin(s.session_id);
-												}}
-												title={
-													pins.includes(s.session_id) ? "取消置顶" : "置顶"
-												}
-											>
-												📌
-											</button>
-											{/* M5：分栏按钮（当前主栏会话不显示） */}
-											{current?.session_id !== s.session_id && (
-												<button
-													className={`split-btn ${isSplit ? "on" : ""}`}
-													onClick={(e) => {
-														e.stopPropagation();
-														if (isSplit) closeSplit();
-														else openSplit(s);
-													}}
-													title={isSplit ? "收起分栏" : "在右栏并行打开"}
-												>
-													⇄
-												</button>
-											)}
-										</div>
-										<div className="meta">
-											{s.agent ?? "build"} · {s.mode} · {s.model}
-											{(s.activeCallCount ?? 0) > 0 && (
-												<> · ⏸{s.activeCallCount}</>
-											)}
-											{s.usage &&
-												(s.usage.prompt_tokens > 0 ||
-													s.usage.completion_tokens > 0) && (
-													<>
-														{" "}
-														·{" "}
-														{(
-															s.usage.prompt_tokens + s.usage.completion_tokens
-														).toLocaleString()}{" "}
-														tok
-													</>
-												)}
-											{s.usage?.cost_usd != null && (
-												<> · ${s.usage.cost_usd.toFixed(4)}</>
-											)}
-										</div>
-										{/* P1-6：worktree 徽标 + 合并/放弃（空闲时） */}
-										{s.worktree && (
-											<div
-												className="worktree-row"
-												onClick={(e) => e.stopPropagation()}
-											>
-												<span
-													className="worktree-badge"
-													title={s.worktree.worktree_path}
-												>
-													⎇ {s.worktree.branch}
-												</span>
-												{status === "idle" && (
-													<>
-														<button
-															className="worktree-action"
-															onClick={async () => {
-																const r = await fetchJson<{
-																	ok: boolean;
-																	error?: string;
-																}>(
-																	`/api/sessions/${s.session_id}/worktree/merge`,
-																	{ method: "POST" }
-																).catch((e) => ({
-																	error: String(e),
-																	ok: false,
-																}));
-																if (!r.ok)
-																	alert(`合并失败：${r.error ?? "未知错误"}`);
-																void queryClient.invalidateQueries({
-																	queryKey: ["sessions"],
-																});
-															}}
-															title="把 worktree 分支合并回主分支并清理"
-														>
-															⇪ 合并
-														</button>
-														<button
-															className="worktree-action danger-text"
-															onClick={async () => {
-																if (
-																	!confirm(
-																		"放弃此 worktree？未合并的改动将丢失。"
-																	)
-																)
-																	return;
-																await fetch(
-																	`/api/sessions/${s.session_id}/worktree/discard`,
-																	{ method: "POST" }
-																);
-																void queryClient.invalidateQueries({
-																	queryKey: ["sessions"],
-																});
-															}}
-															title="放弃 worktree（未合并改动将丢失）"
-														>
-															× 放弃
-														</button>
-													</>
-												)}
-											</div>
-										)}
-									</div>
-								);
-							};
-							const byId = (list: SessionRecord[]) => list;
-							const pinned = byId(
-								sessions.filter((s) => pins.includes(s.session_id))
+							const pinned = sessions.filter((s) =>
+								pins.includes(s.session_id)
 							);
 							const running = sessions.filter(
 								(s) =>
@@ -383,30 +433,32 @@ export function SessionList() {
 									(liveStatus[s.session_id] ?? s.status) !== "awaiting_approval"
 							);
 							const groups = [
-								{ items: pinned, label: "📌 置顶" },
-								{ items: running, label: "● 进行中" },
-								{ items: idleList, label: "○ 空闲" },
+								{ items: pinned, label: "pinned" },
+								{ items: running, label: "running" },
+								{ items: idleList, label: "idle" },
 							].filter((g) => g.items.length > 0);
-							const showHeaders = pinned.length > 0 || running.length > 0;
 							return groups.map((g) => (
 								<div key={g.label}>
-									{showHeaders && (
-										<div className="session-group-label">{g.label}</div>
-									)}
+									<div className="label-mono flex items-center justify-between px-2.5 pt-2.5 pb-1">
+										<span
+											className={g.label === "pinned" ? "text-primary" : ""}
+										>
+											{g.label}
+										</span>
+										<span className="tnum text-faint">{g.items.length}</span>
+									</div>
 									{g.items.map(renderItem)}
 								</div>
 							));
 						})()}
-						{sessions.length === 0 && (
-							<div
-								style={{ color: "var(--text-dim)", fontSize: 12, padding: 12 }}
-							>
+						{sessions.length === 0 && !sessionsFailed && (
+							<div className="p-3 text-xs text-faint">
 								暂无会话，点击上方按钮创建
 							</div>
 						)}
 					</>
 				)}
 			</div>
-		</div>
+		</aside>
 	);
 }
