@@ -1,8 +1,4 @@
-import { createORPCClient } from "@orpc/client";
-import { createTanstackQueryUtils } from "@orpc/tanstack-query";
-import type { AppRouterClient } from "@shuyi-harness/api/routers/index";
 import { Toaster } from "@shuyi-harness/ui/components/ui/sonner";
-import type { QueryClient } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import {
 	createRootRouteWithContext,
@@ -10,11 +6,10 @@ import {
 	Outlet,
 } from "@tanstack/react-router";
 import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
-import { useState } from "react";
 
-import Header from "@/components/header";
 import { ThemeProvider } from "@/components/theme-provider";
-import { link, type orpc } from "@/utils/orpc";
+import type { QueryClient } from "@tanstack/react-query";
+import { type orpc } from "@/utils/orpc";
 
 import "../index.css";
 
@@ -28,26 +23,17 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
 	head: () => ({
 		meta: [
 			{
-				title: "shuyi-harness",
+				title: "shuyi-harness — 编码智能体",
 			},
 			{
 				name: "description",
-				content: "shuyi-harness is a web application",
-			},
-		],
-		links: [
-			{
-				rel: "icon",
-				href: "/favicon.ico",
+				content: "本地优先的编码智能体（个人版）",
 			},
 		],
 	}),
 });
 
 function RootComponent() {
-	const [client] = useState<AppRouterClient>(() => createORPCClient(link));
-	const [orpcUtils] = useState(() => createTanstackQueryUtils(client));
-
 	return (
 		<>
 			<HeadContent />
@@ -57,10 +43,7 @@ function RootComponent() {
 				disableTransitionOnChange
 				storageKey="vite-ui-theme"
 			>
-				<div className="grid h-svh grid-rows-[auto_1fr]">
-					<Header />
-					<Outlet />
-				</div>
+				<Outlet />
 				<Toaster richColors />
 			</ThemeProvider>
 			<TanStackRouterDevtools position="bottom-left" />

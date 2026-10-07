@@ -7,6 +7,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import os from "node:os";
 import {
   CreateSessionRequest,
   PostMessageRequest,
@@ -37,7 +38,9 @@ export function createApi(deps: ApiDeps): Hono {
   // ---------- 会话 ----------
   app.post("/api/sessions", async (c) => {
     const body = CreateSessionRequest.parse(await c.req.json());
-    const session = await deps.sessions.createSession(body);
+    // 展开 `~` 为家目录（浏览器端不便可靠解析）
+    const cwd = body.cwd.startsWith("~") ? body.cwd.replace(/^~/, os.homedir()) : body.cwd;
+    const session = await deps.sessions.createSession({ ...body, cwd });
     return c.json(session, 201);
   });
 
