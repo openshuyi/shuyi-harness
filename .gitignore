@@ -64,6 +64,3 @@ coverage
 .cache
 tmp
 temp
-
-# 嵌套迁移仓库（历史归档；功能已并入根目录）
-shuyi-harness/
