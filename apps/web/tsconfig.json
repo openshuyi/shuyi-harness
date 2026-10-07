@@ -1,15 +1,18 @@
 {
+  "references": [{ "path": "../../packages/api" }],
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
     "strict": true,
-    "jsx": "react-jsx",
-    "skipLibCheck": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "noEmit": true
-  },
-  "include": ["src"]
+    "jsx": "react-jsx",
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "types": ["vite/client"],
+    "rootDirs": ["."],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@shuyi-harness/ui/*": ["../../packages/ui/src/*"]
+    }
+  }
 }

@@ -1,17 +1,26 @@
-import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackRouter } from "@tanstack/router-plugin/vite";
+import { varlockVitePlugin } from "@varlock/vite-integration";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 4290,
-    proxy: {
-      "/api": {
-        // 使用 127.0.0.1 而非 localhost：部分机器上 localhost 解析为 ::1（IPv6），
-        // 会导致代理连接失败或命中异常中间层
-        target: "http://127.0.0.1:4291",
-        changeOrigin: true,
-      },
-    },
-  },
+	plugins: [
+		varlockVitePlugin({ ssrInjectMode: "auto-load" }),
+		tailwindcss(),
+		tanstackRouter({
+			autoCodeSplitting: true,
+			target: "react",
+		}),
+		react(),
+	],
+	resolve: {
+		tsconfigPaths: true,
+	},
+	server: {
+		port: 4350,
+		proxy: {
+			"/api": "http://127.0.0.1:4351",
+		},
+	},
 });

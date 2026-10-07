@@ -1,24 +1,63 @@
 {
   "name": "shuyi-harness",
-  "version": "0.2.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "type": "module",
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "zod": "^4.5.4",
+      "typescript": "^6.0.3",
+      "@types/bun": "^1.4.2",
+      "varlock": "1.18.0",
+      "libsql": "0.5.29",
+      "@orpc/server": "^1.15.0",
+      "@orpc/openapi": "^1.15.0",
+      "@orpc/zod": "^1.15.0",
+      "better-auth": "1.7.7",
+      "lucide-react": "^1.41.0",
+      "next-themes": "^0.4.6",
+      "react": "^19.2.8",
+      "react-dom": "^19.2.8",
+      "sonner": "^2.0.8",
+      "@orpc/client": "^1.15.0",
+      "@types/react": "^19.2.18",
+      "@types/react-dom": "^19.2.7",
+      "tailwindcss": "^4.3.3",
+      "drizzle-orm": "1.0.0-rc.4"
+    }
+  },
   "scripts": {
-    "dev:server": "bun run --cwd apps/server dev",
-    "dev:web": "bun run --cwd apps/web dev",
-    "build:web": "cd apps/web && vite build",
-    "build:binary": "bun build --compile apps/server/src/index.ts --outfile agent-bin",
-    "test": "bun test",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "auth:generate": "cd apps/server && bun run auth:generate",
+    "build": "turbo run build",
+    "check": "ultracite check",
+    "check-types": "turbo run check-types",
+    "db:generate": "turbo run db:generate -F @shuyi-harness/db --",
+    "db:local": "turbo run db:local -F @shuyi-harness/db --",
+    "db:migrate": "turbo run db:migrate -F @shuyi-harness/db --",
+    "db:push": "turbo run db:push -F @shuyi-harness/db --",
+    "db:studio": "turbo run db:studio -F @shuyi-harness/db --",
+    "dev": "turbo run dev",
+    "dev:server": "turbo run dev -F server --",
+    "dev:tui": "turbo run dev -F tui --",
+    "dev:web": "turbo run dev -F web --",
+    "env:generate": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/",
+    "fix": "ultracite fix",
+    "postinstall": "varlock codegen --path ./apps/web/ && varlock codegen --path ./apps/server/ && varlock codegen --path ./packages/db/"
+  },
+  "dependencies": {
+    "zod": "catalog:"
   },
   "devDependencies": {
-    "@types/bun": "^1.2.0",
-    "typescript": "^5.6.0"
+    "@biomejs/biome": "2.5.12",
+    "@shuyi-harness/config": "workspace:*",
+    "@types/bun": "catalog:",
+    "turbo": "^2.10.12",
+    "typescript": "catalog:",
+    "ultracite": "7.11.0",
+    "varlock": "catalog:"
   },
-  "allowScripts": {
-    "esbuild@0.21.5": true
-  }
+  "packageManager": "bun@1.4.2"
 }

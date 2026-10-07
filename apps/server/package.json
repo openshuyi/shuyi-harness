@@ -1,22 +1,39 @@
 {
-  "name": "@shuyi/server",
-  "version": "0.1.0",
+  "name": "server",
   "type": "module",
+  "main": "src/index.ts",
   "scripts": {
-    "dev": "bun --hot src/index.ts",
-    "start": "bun src/index.ts",
-    "headless": "bun src/headless.ts",
-    "acp": "bun src/index.ts --acp"
+    "auth:generate": "varlock run -- bun x auth@latest generate --config src/services.ts --output ../../packages/db/src/schema/auth.ts --yes",
+    "build": "tsc -b ../../packages/api && tsdown",
+    "check-types": "tsc -b ../../packages/api && tsc --noEmit",
+    "compile": "bun build --compile --no-compile-autoload-dotenv --minify --sourcemap --bytecode ./src/index.ts --outfile server",
+    "dev": "bun run --hot src/index.ts",
+    "env:generate": "varlock codegen",
+    "start": "bun run dist/index.mjs"
   },
   "dependencies": {
-    "hono": "^4.6.0",
-    "zod": "^4.1.0",
+    "@libsql/client": "0.18.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
+    "@orpc/openapi": "catalog:",
+    "@orpc/server": "catalog:",
+    "@orpc/zod": "catalog:",
+    "@shuyi-harness/api": "workspace:*",
+    "@shuyi-harness/auth": "workspace:*",
+    "@shuyi-harness/db": "workspace:*",
+    "@shuyi-harness/types": "workspace:*",
+    "better-auth": "catalog:",
+    "hono": "^4.13.7",
+    "libsql": "catalog:",
     "picomatch": "^4.0.2",
-    "@modelcontextprotocol/sdk": "^1.18.0",
-    "@shuyi/types": "*"
+    "varlock": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
+    "@shuyi-harness/config": "workspace:*",
+    "@types/bun": "catalog:",
     "@types/picomatch": "^4.0.3",
-    "typescript-language-server": "^4.3.3"
+    "tsdown": "^0.23.0",
+    "typescript": "catalog:",
+    "typescript-language-server": "^6.0.1"
   }
 }

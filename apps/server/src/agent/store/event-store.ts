@@ -1,0 +1,514 @@
+/**
+ * 存储层：EventStore 接口 + SQLite 实现（@libsql/client 驱动）。
+ *
+ * 不变量（见《事件模型设计》）：
+ * - append-only：事件只追加，永不修改
+ * - seq 会话内单调递增、无空洞（事务内分配）
+ * - 所有读写必须经过此接口（团队版存储挂钩）
+ *
+ * 驱动说明：libsql 本地 file: 库即 SQLite；异步事务保证 seq 分配原子性。
+ * 构造函数保持同步签名，初始化（PRAGMA + 建表）在内部 ready promise 中完成，
+ * 每个公开方法先 await ready。
+ */
+
+import { randomUUID } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+	type Client,
+	createClient,
+	type InValue,
+	type Row,
+} from "@libsql/client";
+import type {
+	AgentEvent,
+	EventInput,
+	EventType,
+	SessionRecord,
+	SessionStatus,
+} from "@shuyi-harness/types";
+import type { EventBus } from "../bus/index.js";
+
+export interface SearchHit {
+	seq: number;
+	session_id: string;
+	session_title: string;
+	snippet: string;
+	ts: number;
+	type: string;
+}
+
+export interface EventStore {
+	append: <T extends EventType>(input: EventInput<T>) => Promise<AgentEvent<T>>;
+	copyEventsTo: (
+		targetSessionId: string,
+		sourceSessionId: string,
+		fromSeq: number,
+		toSeq: number
+	) => Promise<void>;
+	createSession: (
+		record: Omit<SessionRecord, "status" | "last_seq">
+	) => Promise<SessionRecord>;
+	findLast: (sessionId: string, type: EventType) => Promise<AgentEvent | null>;
+	getSession: (sessionId: string) => Promise<SessionRecord | null>;
+	latestSeq: (sessionId: string) => Promise<number>;
+	listSessions: (includeArchived?: boolean) => Promise<SessionRecord[]>;
+	readRange: (
+		sessionId: string,
+		fromSeq: number,
+		toSeq: number
+	) => Promise<AgentEvent[]>;
+	readSince: (sessionId: string, afterSeq: number) => Promise<AgentEvent[]>;
+	/** 全文搜索：在消息与工具结果 payload 中匹配，返回命中摘要（P4） */
+	search: (query: string, limit?: number) => Promise<SearchHit[]>;
+	setSessionStatus: (sessionId: string, status: SessionStatus) => Promise<void>;
+	updateSessionConfig: (
+		sessionId: string,
+		patch: Partial<
+			Pick<
+				SessionRecord,
+				| "mode"
+				| "model"
+				| "sandbox_level"
+				| "title"
+				| "archived"
+				| "agent"
+				| "cwd"
+			>
+		> & { worktree?: SessionRecord["worktree"] | null }
+	) => Promise<void>;
+}
+
+const SCHEMA_STATEMENTS = [
+	`CREATE TABLE IF NOT EXISTS sessions (
+    session_id   TEXT PRIMARY KEY,
+    title        TEXT NOT NULL,
+    cwd          TEXT NOT NULL,
+    mode         TEXT NOT NULL,
+    model        TEXT NOT NULL,
+    sandbox_level TEXT NOT NULL,
+    created_at   INTEGER NOT NULL,
+    archived     INTEGER NOT NULL DEFAULT 0,
+    forked_from  TEXT,
+    caller_identity TEXT NOT NULL DEFAULT 'local-user',
+    agent        TEXT,
+    worktree     TEXT
+  )`,
+	`CREATE TABLE IF NOT EXISTS events (
+    session_id    TEXT NOT NULL,
+    seq           INTEGER NOT NULL,
+    event_id      TEXT NOT NULL UNIQUE,
+    ts            INTEGER NOT NULL,
+    type          TEXT NOT NULL,
+    actor         TEXT NOT NULL,
+    turn_id       TEXT,
+    causation_id  TEXT,
+    payload       TEXT NOT NULL,
+    PRIMARY KEY (session_id, seq)
+  ) WITHOUT ROWID`,
+	"CREATE INDEX IF NOT EXISTS idx_events_type ON events(session_id, type, seq)",
+	"CREATE INDEX IF NOT EXISTS idx_events_turn ON events(session_id, turn_id)",
+];
+
+export class SqliteEventStore implements EventStore {
+	private readonly db: Client;
+	private readonly ready: Promise<void>;
+	/**
+	 * 写入串行链：libsql 单连接上并发事务会 SQLITE_BUSY（如两会话并行轮次），
+	 * 所有写操作在此链上排队执行（WAL 下读操作可并发，不经此链）。
+	 */
+	private writeChain: Promise<unknown> = Promise.resolve();
+
+	private readonly bus: EventBus;
+
+	constructor(dbPath: string, bus: EventBus) {
+		this.bus = bus;
+		if (dbPath !== ":memory:") {
+			mkdirSync(path.dirname(dbPath), { recursive: true });
+		}
+		const url =
+			dbPath === ":memory:"
+				? ":memory:"
+				: pathToFileURL(path.resolve(dbPath)).href;
+		this.db = createClient({ url });
+		this.ready = this.init();
+	}
+
+	private async init(): Promise<void> {
+		await this.db.execute("PRAGMA journal_mode = WAL;");
+		await this.db.execute("PRAGMA synchronous = NORMAL;");
+		await this.db.batch(SCHEMA_STATEMENTS, "write");
+		await this.migrate();
+	}
+
+	/**
+	 * 向后兼容迁移（只允许 ALTER TABLE ADD COLUMN，见 v0.3 设计总则 §0.4）：
+	 * - v0.3 / M2：sessions.agent（会话绑定的代理定义名）
+	 * - P1-6：sessions.worktree（worktree 隔离信息 JSON）
+	 */
+	private async migrate(): Promise<void> {
+		const rs = await this.db.execute("PRAGMA table_info(sessions)");
+		const cols = rs.rows.map((r) => String(r.name));
+		const stmts: string[] = [];
+		if (!cols.includes("agent")) {
+			stmts.push("ALTER TABLE sessions ADD COLUMN agent TEXT");
+		}
+		if (!cols.includes("worktree")) {
+			stmts.push("ALTER TABLE sessions ADD COLUMN worktree TEXT");
+		}
+		if (stmts.length > 0) {
+			await this.db.batch(stmts, "write");
+		}
+	}
+
+	/** 把写操作排入串行链（前序失败不阻塞后续） */
+	private enqueueWrite<T>(op: () => Promise<T>): Promise<T> {
+		const task = this.writeChain.then(op, op);
+		this.writeChain = task.then(
+			() => undefined,
+			() => undefined
+		);
+		return task;
+	}
+
+	private rowToEvent(row: Row): AgentEvent {
+		return {
+			actor: String(row.actor) as AgentEvent["actor"],
+			causation_id: row.causation_id === null ? null : String(row.causation_id),
+			event_id: String(row.event_id),
+			payload: JSON.parse(String(row.payload)),
+			seq: Number(row.seq),
+			session_id: String(row.session_id),
+			ts: Number(row.ts),
+			turn_id: row.turn_id === null ? null : String(row.turn_id),
+			type: String(row.type) as EventType,
+		} as AgentEvent;
+	}
+
+	async append<T extends EventType>(
+		input: EventInput<T>
+	): Promise<AgentEvent<T>> {
+		await this.ready;
+		return this.enqueueWrite(() => this.appendSerialized(input));
+	}
+
+	/** 单事务内分配 seq 并插入（调用方已在串行链上） */
+	private async appendSerialized<T extends EventType>(
+		input: EventInput<T>
+	): Promise<AgentEvent<T>> {
+		// seq 分配与插入必须在同一事务内，保证单调无空洞
+		const tx = await this.db.transaction("write");
+		let full: AgentEvent<T>;
+		try {
+			const rs = await tx.execute({
+				args: [input.session_id],
+				sql: "SELECT MAX(seq) AS max_seq FROM events WHERE session_id = ?",
+			});
+			const seq = Number(rs.rows[0]?.max_seq ?? -1) + 1;
+			full = {
+				actor: input.actor,
+				causation_id: input.causation_id ?? null,
+				event_id: randomUUID(),
+				payload: input.payload,
+				seq,
+				session_id: input.session_id,
+				ts: Date.now(),
+				turn_id: input.turn_id ?? null,
+				type: input.type,
+			};
+			await tx.execute({
+				args: [
+					full.session_id,
+					full.seq,
+					full.event_id,
+					full.ts,
+					full.type,
+					full.actor,
+					full.turn_id,
+					full.causation_id,
+					JSON.stringify(full.payload),
+				],
+				sql: `INSERT INTO events (session_id, seq, event_id, ts, type, actor, turn_id, causation_id, payload)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			});
+			await tx.commit();
+		} catch (err) {
+			await tx.rollback();
+			throw err;
+		}
+
+		// 提交后发布到总线（SSE 订阅者据此实时推送）
+		this.bus.publish(full as AgentEvent);
+		return full;
+	}
+
+	async readSince(sessionId: string, afterSeq: number): Promise<AgentEvent[]> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [sessionId, afterSeq],
+			sql: "SELECT * FROM events WHERE session_id = ? AND seq > ? ORDER BY seq",
+		});
+		return rs.rows.map((r) => this.rowToEvent(r));
+	}
+
+	async readRange(
+		sessionId: string,
+		fromSeq: number,
+		toSeq: number
+	): Promise<AgentEvent[]> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [sessionId, fromSeq, toSeq],
+			sql: "SELECT * FROM events WHERE session_id = ? AND seq >= ? AND seq <= ? ORDER BY seq",
+		});
+		return rs.rows.map((r) => this.rowToEvent(r));
+	}
+
+	async latestSeq(sessionId: string): Promise<number> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [sessionId],
+			sql: "SELECT MAX(seq) AS max_seq FROM events WHERE session_id = ?",
+		});
+		return Number(rs.rows[0]?.max_seq ?? -1);
+	}
+
+	async findLast(
+		sessionId: string,
+		type: EventType
+	): Promise<AgentEvent | null> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [sessionId, type],
+			sql: "SELECT * FROM events WHERE session_id = ? AND type = ? ORDER BY seq DESC LIMIT 1",
+		});
+		const [row] = rs.rows;
+		return row ? this.rowToEvent(row) : null;
+	}
+
+	// ---------- 会话 ----------
+
+	private async rowToSession(row: Row): Promise<SessionRecord> {
+		const sessionId = String(row.session_id);
+		return {
+			agent:
+				row.agent === null || row.agent === undefined
+					? undefined
+					: String(row.agent),
+			archived: Number(row.archived) === 1,
+			caller_identity: String(row.caller_identity),
+			created_at: Number(row.created_at),
+			cwd: String(row.cwd),
+			forked_from: row.forked_from === null ? null : String(row.forked_from),
+			last_seq: await this.latestSeq(sessionId),
+			mode: String(row.mode) as SessionRecord["mode"],
+			model: String(row.model),
+			sandbox_level: String(
+				row.sandbox_level
+			) as SessionRecord["sandbox_level"],
+			session_id: sessionId,
+			status: await this.currentStatus(sessionId),
+			title: String(row.title),
+			usage: await this.totalUsage(sessionId),
+			worktree: row.worktree
+				? (JSON.parse(String(row.worktree)) as SessionRecord["worktree"])
+				: undefined,
+		};
+	}
+
+	/** 聚合 turn.completed 的 token 用量（成本归因的最小形态） */
+	private async totalUsage(sessionId: string): Promise<{
+		prompt_tokens: number;
+		completion_tokens: number;
+		cost_usd?: number;
+	}> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [sessionId],
+			sql: `SELECT
+           SUM(json_extract(payload, '$.usage.prompt_tokens')) AS p,
+           SUM(json_extract(payload, '$.usage.completion_tokens')) AS c,
+           SUM(json_extract(payload, '$.cost_estimate')) AS cost
+          FROM events WHERE session_id = ? AND type = 'turn.completed'`,
+		});
+		const [row] = rs.rows;
+		const usage = {
+			completion_tokens: Number(row?.c ?? 0),
+			prompt_tokens: Number(row?.p ?? 0),
+		};
+		const cost = row?.cost;
+		return cost === null || cost === undefined
+			? usage
+			: { ...usage, cost_usd: Number(cost) };
+	}
+
+	async search(query: string, limit = 20): Promise<SearchHit[]> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [`%${query}%`, limit],
+			sql: `SELECT e.seq, e.type, e.payload, e.ts, s.title, s.session_id
+          FROM events e JOIN sessions s ON s.session_id = e.session_id
+          WHERE e.type IN ('message.user', 'message.assistant.completed', 'tool.call.completed')
+            AND e.payload LIKE ?
+          ORDER BY e.ts DESC LIMIT ?`,
+		});
+		return rs.rows.map((r) => {
+			const payload = JSON.parse(String(r.payload)) as Record<string, unknown>;
+			const text = String(payload.text ?? payload.result ?? "");
+			const idx = text.indexOf(query);
+			const start = Math.max(0, idx - 40);
+			return {
+				seq: Number(r.seq),
+				session_id: String(r.session_id),
+				session_title: String(r.title),
+				snippet:
+					(start > 0 ? "…" : "") + text.slice(start, idx + query.length + 80),
+				ts: Number(r.ts),
+				type: String(r.type),
+			};
+		});
+	}
+
+	private async currentStatus(sessionId: string): Promise<SessionStatus> {
+		const last = await this.findLast(sessionId, "session.status_changed");
+		const payload = last?.payload as { status?: SessionStatus } | undefined;
+		return payload?.status ?? "idle";
+	}
+
+	async createSession(
+		record: Omit<SessionRecord, "status" | "last_seq">
+	): Promise<SessionRecord> {
+		await this.ready;
+		await this.enqueueWrite(async () => {
+			await this.db.execute({
+				args: [
+					record.session_id,
+					record.title,
+					record.cwd,
+					record.mode,
+					record.model,
+					record.sandbox_level,
+					record.created_at,
+					record.archived ? 1 : 0,
+					record.forked_from,
+					record.caller_identity,
+					record.agent ?? null,
+					record.worktree ? JSON.stringify(record.worktree) : null,
+				],
+				sql: `INSERT INTO sessions (session_id, title, cwd, mode, model, sandbox_level, created_at, archived, forked_from, caller_identity, agent, worktree)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			});
+		});
+		const created = await this.getSession(record.session_id);
+		if (!created) {
+			throw new Error("会话写入后读取失败（不应发生）");
+		}
+		return created;
+	}
+
+	async getSession(sessionId: string): Promise<SessionRecord | null> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [sessionId],
+			sql: "SELECT * FROM sessions WHERE session_id = ?",
+		});
+		const [row] = rs.rows;
+		return row ? this.rowToSession(row) : null;
+	}
+
+	async listSessions(includeArchived = false): Promise<SessionRecord[]> {
+		await this.ready;
+		const rs = await this.db.execute({
+			args: [includeArchived ? 1 : 0],
+			sql: "SELECT * FROM sessions WHERE archived <= ? ORDER BY created_at DESC",
+		});
+		const out: SessionRecord[] = [];
+		for (const row of rs.rows) {
+			// biome-ignore lint/performance/noAwaitInLoops: 每行聚合字段需逐条查询，量级为会话数
+			out.push(await this.rowToSession(row));
+		}
+		return out;
+	}
+
+	async setSessionStatus(
+		sessionId: string,
+		status: SessionStatus
+	): Promise<void> {
+		await this.append({
+			actor: "system",
+			payload: { status },
+			session_id: sessionId,
+			type: "session.status_changed",
+		});
+	}
+
+	async updateSessionConfig(
+		sessionId: string,
+		patch: Partial<
+			Pick<
+				SessionRecord,
+				| "mode"
+				| "model"
+				| "sandbox_level"
+				| "title"
+				| "archived"
+				| "agent"
+				| "cwd"
+			>
+		> & { worktree?: SessionRecord["worktree"] | null }
+	): Promise<void> {
+		await this.ready;
+		const sets: string[] = [];
+		const vals: InValue[] = [];
+		for (const [k, v] of Object.entries(patch)) {
+			if (v === undefined) {
+				continue;
+			}
+			sets.push(`${k} = ?`);
+			if (k === "archived") {
+				vals.push(v ? 1 : 0);
+			} else if (k === "worktree") {
+				vals.push(v ? JSON.stringify(v) : null);
+			} else {
+				vals.push(v as string | null);
+			}
+		}
+		if (sets.length === 0) {
+			return;
+		}
+		vals.push(sessionId);
+		await this.enqueueWrite(() =>
+			this.db.execute({
+				args: vals,
+				sql: `UPDATE sessions SET ${sets.join(", ")} WHERE session_id = ?`,
+			})
+		);
+	}
+
+	/** 分叉：把源会话 [fromSeq, toSeq] 区间的事件物理复制到目标会话 */
+	async copyEventsTo(
+		targetSessionId: string,
+		sourceSessionId: string,
+		fromSeq: number,
+		toSeq: number
+	): Promise<void> {
+		const events = await this.readRange(sourceSessionId, fromSeq, toSeq);
+		for (const e of events) {
+			// biome-ignore lint/performance/noAwaitInLoops: 分叉复制必须保序
+			await this.append({
+				actor: e.actor,
+				causation_id: e.causation_id,
+				payload: e.payload,
+				session_id: targetSessionId,
+				turn_id: e.turn_id,
+				type: e.type,
+			} as EventInput);
+		}
+	}
+
+	async close(): Promise<void> {
+		await this.ready;
+		this.db.close();
+	}
+}

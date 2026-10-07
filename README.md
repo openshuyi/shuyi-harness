@@ -1,20 +1,30 @@
-# shuyi-harness —— 本地优先的编码智能体（个人版 v0.2）
+# shuyi-harness —— 本地优先的编码智能体（个人版 v0.5，Better T Stack 架构）
 
-参考 OpenCode 形态的「本地服务端 + 浏览器客户端」架构。设计文档见 `docs/`：
+参考 OpenCode 形态的「本地服务端 + 浏览器客户端」架构，运行在 Better T Stack monorepo
+（Turborepo + Biome/Ultracite + Varlock + oRPC；Better-Auth / Drizzle 为团队版预留挂钩，当前休眠）。
+设计文档见 `docs/`：
 
 - 《编码智能体-总体架构与开发计划.md》—— 设计原则、模块划分、里程碑计划
 - 《编码智能体-事件模型设计.md》—— 全系统第一份契约：事件类型、SQLite schema、上下文重建算法、SSE 协议
 - 《编码智能体-技术选型与仓库结构.md》—— 选型理由与 monorepo 结构
+- 《编码智能体-v0.3设计-能力追赶计划.md》/《编码智能体-v0.4设计-交互体验追赶计划.md》—— 能力与交互追赶
 
-## 仓库结构（better-t-stack 规范）
+## 仓库结构
 
 ```
 shuyi-harness/
 ├── apps/
-│   ├── server/        # @shuyi/server — Agent Server（Bun + Hono）
-│   └── web/           # @shuyi/web    — Web SPA（Vite + React）
+│   ├── server/        # Agent Server（Bun + Hono + libsql 事件存储）
+│   │   └── src/agent/ # 智能体内核（loop/store/tools/permission/acp/checkpoint/agents/…）
+│   ├── web/           # Web SPA（Vite + React + TanStack Router；Tauri 桌面壳预留）
+│   └── tui/           # OpenTUI 终端界面（预留）
 ├── packages/
-│   └── types/         # @shuyi/types  — 事件模型契约（前后端共享）
+│   ├── types/         # @shuyi-harness/types — 事件模型契约（前后端共享）
+│   ├── api/           # oRPC 路由层（团队版扩展点）
+│   ├── auth/          # Better-Auth（休眠保留）
+│   ├── db/            # Drizzle + libsql（休眠保留：团队版身份/审计表）
+│   ├── ui/            # shadcn/base-lyra 组件库（含 AI Elements，供 web 重皮用）
+│   └── config/        # 共享 tsconfig（noUncheckedIndexedAccess 等严格集）
 ├── docs/              # 架构设计文档
 └── mcp.json.example   # MCP 配置示例
 ```
@@ -24,41 +34,45 @@ shuyi-harness/
 前置：已安装 [Bun](https://bun.sh)（≥ 1.4）。
 
 ```bash
-# 安装依赖（workspaces；npm 亦可）
-bun install        # 或 npm install
+bun install
 
-# 终端 1：启动 Agent Server（默认端口 4291）
+# 终端 1：启动 Agent Server（默认端口 4351）
 bun run dev:server
 
-# 终端 2：启动 Web 开发服务器（端口 4290，代理 /api 到 4291）
+# 终端 2：启动 Web 开发服务器（端口 4350）
 bun run dev:web
-# 打开 http://localhost:4290
+# 打开 http://localhost:4350
 ```
 
-生产模式（单进程单端口）：
+说明：dev 下 web 直连 `VITE_SERVER_URL`（http://localhost:4351），
+不经 vite 代理——本机代理/VPN 软件可能缓冲代理层的 SSE 流。
+
+生产模式（单进程单端口，server 托管构建好的 SPA）：
 
 ```bash
-bun run build:web
-bun run --cwd apps/server start
-# 打开 http://localhost:4291
+bun run build         # turbo：tsdown 打包 server + vite 构建 web
+cd apps/server && bun run start
+# 打开 http://localhost:4351
 ```
 
 ## 体验路径（内置 Mock 模型，无需 API key）
 
-1. 点击「+ 新会话」
+1. 输入工作区绝对路径 → 点「+ 新会话」（路径会被记住，支持 `~` 前缀）
 2. 输入普通消息 → 看流式输出
 3. 输入 `!write test.txt 你好` → write 工具在工作区内自动放行，工具卡片可展开看 diff，改动自动 git 提交
 4. 输入 `!bash ls -la` → 弹出审批窗（完整命令可见）→ 批准后执行
 5. 输入 `!write /etc/evil.txt x` → 权限服务 fail-closed 拒绝（越出工作区）
 6. 输入 `!task 总结这个项目` → 子代理在隔离上下文探索后带回摘要
 7. 输入 `!memory 项目用 Bun 运行时` → 写入项目记忆，后续会话自动注入
-8. 切到 Plan 模式 → 只读分析，写工具对模型不可见
+8. 切到 Plan 模式 → 只读分析，写工具对模型不可见；计划完成后可一键批准开工（F5）
 9. 侧栏搜索框 → 全文检索历史消息；会话条目显示累计 token 用量与成本
 10. 工具栏「↩ 撤销本轮改动」→ 工作区 git 回滚到本轮开始前（未提交改动先自动保存）
 11. 工具栏「⬇ 回放」→ 下载自包含 HTML 会话回放（可分享）
 12. 📎 按钮 → 附件随消息发送，agent 可用 read 工具读取
 13. 侧栏 ☀/☾ → 深色/浅色主题切换（记忆选择，默认跟随系统）
-14. 刷新页面 / 重启服务端 → 会话现场从事件日志完整恢复
+14. 变更面板（F2）→ 逐文件 accept/revert 审查本轮改动
+15. busy 时发消息 → 自动排队（Steering，F4），轮次结束后依次执行，可撤回
+16. 刷新页面 / 重启服务端 → 会话现场从事件日志完整恢复
 
 接入真实模型（OpenAI 兼容协议，含 DeepSeek / OpenAI 等）——三种方式：
 
@@ -109,16 +123,19 @@ model: deepseek        # 可选：覆盖会话模型
 task 工具用 `agent` 参数指定代理定义（默认 `explore`）；内置 `title` 代理负责自动标题。
 安全约束不变：子代理工具面始终只读，写操作由主代理决定后执行。
 
-## 测试
+## 测试与质量门
 
 ```bash
-bun test            # 56 个用例（7 个文件）：工具执行 / 审批批准与拒绝 / 权限拒绝 /
-                    # 上下文重建配对 / 崩溃恢复 / 分叉 / seq 无空洞 /
-                    # git 提交 / Plan 模式 / 记忆 / 压缩 / 子代理 / MCP / LSP / 搜索 / 用量 /
-                    # 模型注册表 / 重试退避 / 成本估算 / 纠错回环 / 回放导出 / 会话回滚 /
-                    # bash 输出压缩 / 后台任务 / LSP 编辑后诊断 / 代理定义 / 自动标题 /
-                    # 项目配置 / models.dev 元数据
-bun run typecheck   # 全量类型检查
+bun test                      # 在 apps/server 下运行全部用例：工具执行 / 审批 / 权限 /
+                              # 上下文重建 / 崩溃恢复 / 分叉 / seq 无空洞 / git 提交 /
+                              # Plan 模式 / 记忆 / 压缩 / 子代理 / MCP / LSP / 搜索 / 用量 /
+                              # 模型注册表 / 重试退避 / 成本估算 / 纠错回环 / 回放导出 /
+                              # 会话回滚 / bash 压缩与后台任务 / LSP 编辑后诊断 / 代理定义 /
+                              # 自动标题 / 项目配置 / models.dev / todo / worktree / hooks /
+                              # skills / commands / web 搜索 / question / acp / tui / rewind
+bun run check                 # ultracite（Biome）lint + 格式
+bun run check-types           # 全仓 tsc（turbo，严格集含 noUncheckedIndexedAccess）
+bun run build                 # 全仓构建（turbo）
 ```
 
 ## Headless 模式（不开浏览器直接跑任务）
@@ -136,46 +153,50 @@ bun run --cwd apps/server headless run "重构 src/utils 模块" \
 **MCP 外部工具**：把 `mcp.json.example` 复制为 `~/.agent/mcp.json` 并配置 server，
 启动时自动桥接其工具（`mcp_<server>_<tool>`），与内置工具同一权限模型（默认逐条审批）。
 
-**LSP 代码智能**：项目装有 typescript-language-server 时自动可用（诊断/定义/引用），
-未安装时工具优雅降级并提示安装方法。
+**LSP 代码智能**：项目装有 typescript-language-server 时自动可用（诊断/定义/引用 +
+编辑后诊断回注纠错回环），未安装时工具优雅降级并提示安装方法。
 
-**独立二进制分发**：
-
-```bash
-bun run build:binary   # 产出 agent-bin（约 79MB，含运行时）
-AGENT_WEB_DIST=apps/web/dist ./agent-bin
-```
+**ACP（IDE 协议）**：`--acp` 进入 ACP stdio 模式，作为 IDE（如 Zed）子进程运行；
+**内嵌 TUI**：`--tui` 启动终端客户端（连接常驻服务端）。
 
 **上下文压缩**：窗口填充 75% 自动触发（确定性清理 → 结构化模板摘要），
 `AGENT_CONTEXT_WINDOW` 可配置窗口大小。
 
+**环境变量**（均可选，见 `apps/server/.env.schema`，Varlock 管理）：
+`AGENT_PORT`（4351）、`AGENT_DB`（~/.agent/agent.db）、`AGENT_MODELS`、
+`AGENT_MODELS_CONFIG`（~/.agent/models.json）、`AGENT_MCP_CONFIG`（~/.agent/mcp.json）、
+`AGENT_CONTEXT_WINDOW`（128000）、`AGENT_WEB_DIST`。
+
 ## 架构一图
 
 ```
-浏览器 SPA (React + Zustand + TanStack Query)
-   │ HTTP + SSE（after_seq 断线续传）
+浏览器 SPA (React + Zustand + TanStack Query，聚合 SSE 直连 4351)
+   │ HTTP + SSE（after_seq 断线续传；聚合流支持双会话对比）
    ▼
-Agent Server (Bun + Hono)
-   API 层 → 会话管理 → 核心 Loop ─┬─ 权限服务（fail-closed + 审批工作流）
-                                  ├─ 工具系统（read/write/edit/bash/glob/grep）
-                                  ├─ 上下文工程（重建 / 前缀稳定 / 压缩预留）
-                                  └─ 模型适配层（mock / OpenAI 兼容）
+Hono 宿主（CORS / Better-Auth(休眠) / oRPC /rpc / Agent REST+SSE /api/* / 静态托管）
    ▼
-SQLite 事件日志（append-only，唯一事实来源）
+Agent 内核 (src/agent/)
+   API 层 → 会话管理（队列/rewind/worktree/自动标题）→ 核心 Loop
+   ─┬─ 权限服务（fail-closed + 审批 + glob 规则 + 项目配置）
+    ├─ 工具系统（read/write/edit/bash(+后台)/glob/grep/todo/web/question/task）
+    ├─ 上下文工程（重建 / 前缀稳定 / 压缩 / 记忆 / todo 附录）
+    ├─ 代理定义（agents/*.md）/ 技能（skills）/ 斜杠命令 / hooks
+    ├─ 检查点（write 影子快照 → rewind/变更面板审查）
+    └─ 模型适配层（mock / OpenAI 兼容 / 重试 / 成本 / models.dev）
+   ▼
+libsql SQLite 事件日志（append-only，唯一事实来源；WAL）
 ```
 
 核心不变量：**一切皆是事件**。模型看到的一切都能从事件日志完整重建；
-恢复、回放、分叉、未来的审计都是对同一条事件流的不同 fold。
+恢复、回放、分叉、rewind、未来的审计都是对同一条事件流的不同 fold。
 
 ## 当前状态与 roadmap
 
-已完成（v0.5）：P0 骨架、P1 安全基线（含 git 原子提交）、P2 上下文工程
-（结构化压缩 / 记忆 / Plan/Build 工具面）、P3 能力扩展（LSP / MCP / 子代理）、
-P4 主体（全文搜索 / 用量统计 / 二进制分发）、P5 模型实战化（多 provider /
-运行时模型管理 / 失败重试 / 成本估算）、P6 质量与可观测性（Trajectory 来源过滤 /
-批量审批 / 纠错回环 / 回放导出 / CI）、P7 能力深化（会话回滚 / 附件 /
-headless 模式）、深色浅色双主题、P8 对齐 OpenCode/DeepSeek Harness
-（编辑后 LSP 诊断回注 / bash 输出压缩与后台任务 / 声明式代理定义 /
-自动标题 / 项目级 shuyi.json / models.dev 元数据）。
-待做：真实模型长任务调优、团队版三挂钩的中心化实现（身份 / 存储 / 审计）。
+已完成（v0.5 + BTS 架构迁移）：v0.2 内核全部能力（安全基线 / 上下文工程 /
+能力扩展 / 主体）、P5 模型实战化、P6 质量与可观测性、P7 能力深化（回滚/附件/headless）、
+P8 对齐 OpenCode/DeepSeek Harness、v0.3 能力追赶（M1–M6）、v0.4 交互体验追赶（F1–F10）、
+Better T Stack 架构迁移（Turborepo/Biome/Varlock/libsql + 严格 TS 质量门）。
+待做（backlog）：web 升级 shadcn/Tailwind v4 重皮（packages/ui 已备好 AI Elements）、
+API oRPC 化、Better-Auth/Drizzle 团队版唤醒、Tauri 桌面打包、TUI 接入、
+`bun build --compile` × libsql 复验、平移组件 lint 冻结解除。
 详见 docs 中开发计划文档。
