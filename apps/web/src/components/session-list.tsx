@@ -146,7 +146,7 @@ export function SessionList() {
 					<button
 						className="theme-toggle"
 						onClick={toggleTheme}
-						title={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
+						title={theme === "dark" ? "切换到纸（浅色）" : "切换到墨（深色）"}
 					>
 						{theme === "dark" ? "☀" : "☾"}
 					</button>

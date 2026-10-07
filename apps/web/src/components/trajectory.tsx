@@ -29,6 +29,11 @@ function ToolCard({ item }: { item: Extract<TimelineItem, { kind: "tool" }> }) {
 				<span className={`tool-badge ${item.status}`}>
 					{STATUS_LABEL[item.status]}
 				</span>
+				{item.approved === true && (
+					<span aria-hidden="true" className="seal-stamp" title="已盖印批准">
+						准
+					</span>
+				)}
 				{item.durationMs !== undefined && (
 					<span className="tool-duration">{item.durationMs}ms</span>
 				)}
@@ -205,7 +210,7 @@ function PlanCard({ slot, planText }: { slot: PaneSlot; planText: string }) {
 	};
 	return (
 		<div className="plan-card">
-			<div className="plan-card-title">📋 计划待批准</div>
+			<div className="plan-card-title">计划待批准</div>
 			{editing ? (
 				<textarea
 					className="plan-editor"

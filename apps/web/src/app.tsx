@@ -135,7 +135,7 @@ export default function App() {
 				]
 			: []),
 		{
-			hint: "深色 / 浅色",
+			hint: "墨 / 纸",
 			id: "theme",
 			label: "切换主题",
 			run: () =>

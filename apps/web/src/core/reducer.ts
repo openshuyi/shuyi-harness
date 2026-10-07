@@ -33,6 +33,8 @@ export type TimelineItem =
 			output?: string;
 			durationMs?: number;
 			diff?: string;
+			/** 墨仪：审批通过后盖「准」印（approval.resolved · approve） */
+			approved?: boolean;
 	  }
 	| {
 			kind: "marker";
@@ -265,7 +267,9 @@ export function reduceEvent(
 			const denied = p.decision === "deny";
 			const items = denied
 				? updateToolByApproval(s, p.approval_id as string, { status: "denied" })
-				: s.items;
+				: updateToolByApproval(s, p.approval_id as string, {
+						approved: true,
+					});
 			return { ...s, items, pendingApprovals: remaining };
 		}
 

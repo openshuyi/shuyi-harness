@@ -1,41 +1,51 @@
 /* ============================================================
-   Shuyi Agent — 2026 设计语言
-   分层表面 · 电光靛蓝渐变 · 大圆角 · 柔影 · 微交互 · 双主题
+   Shuyi Agent — 墨仪 · Ink Instrument（v2.1 天青定稿）
+   墨分五色表面 · 宣纸浅色 · 天青交互 · 朱砂印章 · 宋体标题 · 双主题
    ============================================================ */
 
 :root,
 [data-theme="dark"] {
-	/* 表面分层：base → 悬浮卡 → 更高层 */
-	--bg: #0b0d12;
-	--bg-soft: #11141c;
-	--bg-softer: #181c27;
-	--bg-elev: #1f2431;
-	/* 发丝边框：白色低透明度，比纯色更轻 */
-	--border: rgba(255, 255, 255, 0.07);
-	--border-strong: rgba(255, 255, 255, 0.14);
-	--text: #e8eaf0;
-	--text-dim: #8a91a3;
-	/* 电光靛蓝 → 紫 渐变 */
-	--accent: #6e6cf6;
-	--accent-2: #a78bfa;
-	--accent-grad: linear-gradient(135deg, #6e6cf6 0%, #a78bfa 100%);
-	--accent-soft: rgba(110, 108, 246, 0.14);
-	--accent-ring: rgba(110, 108, 246, 0.35);
-	--green: #34d399;
-	--red: #f87171;
-	--yellow: #fbbf24;
-	--cyan: #67e8f9;
-	--badge-proposed-bg: rgba(255, 255, 255, 0.06);
-	--badge-awaiting-bg: rgba(251, 191, 36, 0.13);
-	--badge-running-bg: rgba(110, 108, 246, 0.16);
-	--badge-done-bg: rgba(52, 211, 153, 0.13);
-	--badge-failed-bg: rgba(248, 113, 113, 0.13);
-	--overlay: rgba(4, 5, 8, 0.62);
+	/* 墨五色：焦 → 浓 → 重 → 淡（+ 沉墨凹陷） */
+	--bg: #0f0e0d;
+	--bg-soft: #151413;
+	--bg-softer: #1c1b19;
+	--bg-elev: #242320;
+	--bg-inset: #0a0908;
+	/* 暖调发丝线 */
+	--border: rgba(255, 246, 235, 0.055);
+	--border-strong: rgba(255, 246, 235, 0.1);
+	--text: #edebe6;
+	--text-dim: #9d9a94;
+	/* 天青（汝窑）· 交互色；墨字瓷面 */
+	--accent: #8ab4d9;
+	--accent-2: #a3c5e2;
+	--accent-ink: #101c28;
+	--accent-grad: linear-gradient(135deg, #8ab4d9 0%, #8ab4d9 100%);
+	--accent-soft: rgba(138, 180, 217, 0.15);
+	--accent-ring: rgba(138, 180, 217, 0.45);
+	/* 朱砂 · 印章专属（品牌印 / 批准动作） */
+	--seal: #d64730;
+	--seal-hover: #e4654e;
+	--seal-soft: rgba(214, 71, 48, 0.14);
+	/* 语义 = 传统颜料：石绿 · 茜红 · 藤黄 · 青瓷 */
+	--green: #35b98a;
+	--red: #ef5f7d;
+	--yellow: #f0b34e;
+	--cyan: #62c2cf;
+	--badge-proposed-bg: rgba(255, 246, 235, 0.05);
+	--badge-awaiting-bg: rgba(240, 179, 78, 0.13);
+	--badge-running-bg: rgba(138, 180, 217, 0.16);
+	--badge-done-bg: rgba(53, 185, 138, 0.13);
+	--badge-failed-bg: rgba(239, 95, 125, 0.13);
+	--overlay: rgba(6, 5, 4, 0.6);
 	--shadow-card: 0 2px 10px rgba(0, 0, 0, 0.25);
-	--shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.5);
+	--shadow-pop: 0 16px 48px rgba(0, 0, 0, 0.6);
 	--radius-s: 8px;
-	--radius-m: 12px;
-	--radius-l: 18px;
+	--radius-m: 10px;
+	--radius-l: 12px;
+	--font-serif:
+		"Noto Serif SC Variable", "Noto Serif SC", "Songti SC", "STSong",
+		"Noto Serif CJK SC", serif;
 	font-family:
 		-apple-system, "SF Pro", "Segoe UI", "PingFang SC", "Microsoft YaHei",
 		"Noto Sans SC", sans-serif;
@@ -43,32 +53,38 @@
 }
 
 [data-theme="light"] {
-	--bg: #fafaf7;
-	--bg-soft: #f2f2ee;
-	--bg-softer: #e9e9e3;
-	--bg-elev: #ffffff;
-	--border: rgba(20, 22, 30, 0.09);
-	--border-strong: rgba(20, 22, 30, 0.16);
-	--text: #1c1e26;
-	--text-dim: #6b7080;
-	--accent: #5b58e8;
-	--accent-2: #8b5cf6;
-	--accent-grad: linear-gradient(135deg, #5b58e8 0%, #8b5cf6 100%);
-	--accent-soft: rgba(91, 88, 232, 0.09);
-	--accent-ring: rgba(91, 88, 232, 0.28);
-	--green: #0d9f6e;
-	--red: #dc4c4c;
-	--yellow: #b7791f;
-	--cyan: #0e7490;
-	--badge-proposed-bg: rgba(20, 22, 30, 0.05);
-	--badge-awaiting-bg: rgba(183, 121, 31, 0.12);
-	--badge-running-bg: rgba(91, 88, 232, 0.1);
-	--badge-done-bg: rgba(13, 159, 110, 0.12);
-	--badge-failed-bg: rgba(220, 76, 76, 0.1);
-	--overlay: rgba(28, 30, 38, 0.36);
+	/* 宣纸：生纸 → 熟纸 → 帘纹 → 卷面 */
+	--bg: #f3f0e9;
+	--bg-soft: #f7f5ee;
+	--bg-softer: #edeadf;
+	--bg-elev: #fcfbf7;
+	--bg-inset: #edeadf;
+	--border: rgba(32, 28, 20, 0.07);
+	--border-strong: rgba(32, 28, 20, 0.12);
+	--text: #211f1c;
+	--text-dim: #5a5750;
+	--accent: #2e6ea6;
+	--accent-2: #3a7cb4;
+	--accent-ink: #ffffff;
+	--accent-grad: linear-gradient(135deg, #2e6ea6 0%, #2e6ea6 100%);
+	--accent-soft: rgba(46, 110, 166, 0.1);
+	--accent-ring: rgba(46, 110, 166, 0.4);
+	--seal: #b23415;
+	--seal-hover: #9c2d11;
+	--seal-soft: rgba(178, 52, 21, 0.1);
+	--green: #0f8f66;
+	--red: #c73a5c;
+	--yellow: #a8741c;
+	--cyan: #0e7d8a;
+	--badge-proposed-bg: rgba(32, 28, 20, 0.05);
+	--badge-awaiting-bg: rgba(168, 116, 28, 0.12);
+	--badge-running-bg: rgba(46, 110, 166, 0.1);
+	--badge-done-bg: rgba(15, 143, 102, 0.12);
+	--badge-failed-bg: rgba(199, 58, 92, 0.1);
+	--overlay: rgba(33, 31, 28, 0.34);
 	--shadow-card:
-		0 1px 3px rgba(20, 22, 30, 0.06), 0 6px 18px rgba(20, 22, 30, 0.05);
-	--shadow-pop: 0 18px 56px rgba(20, 22, 30, 0.18);
+		0 1px 3px rgba(32, 28, 20, 0.06), 0 6px 18px rgba(32, 28, 20, 0.05);
+	--shadow-pop: 0 18px 56px rgba(32, 28, 20, 0.18);
 	color-scheme: light;
 }
 
@@ -87,6 +103,14 @@ body,
 body {
 	font-size: 14px;
 	-webkit-font-smoothing: antialiased;
+}
+
+/* 宋体标题轨 · 读品气质 */
+h1,
+h2,
+h3 {
+	font-family: var(--font-serif);
+	letter-spacing: 0.01em;
 }
 
 .app {
@@ -110,18 +134,16 @@ body {
 }
 .sidebar-header h1 {
 	margin-bottom: 10px;
+	font-family: var(--font-serif);
 	font-size: 16px;
 	font-weight: 700;
-	-webkit-text-fill-color: transparent;
-	letter-spacing: -0.02em;
-	background: var(--accent-grad);
-	-webkit-background-clip: text;
-	background-clip: text;
+	color: var(--seal);
+	letter-spacing: 0.01em;
 }
 .brand-dot {
 	display: inline-block;
 	margin-right: 6px;
-	-webkit-text-fill-color: var(--accent);
+	color: var(--seal);
 }
 
 .session-list {
@@ -137,7 +159,7 @@ body {
 	outline: none;
 	background: var(--bg-softer);
 	border: 1px solid transparent;
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 	transition:
 		border-color 0.18s,
 		box-shadow 0.18s,
@@ -579,7 +601,7 @@ body {
 	cursor: pointer;
 	background: var(--bg-softer);
 	border: 1px solid transparent;
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 	transition:
 		border-color 0.15s,
 		background 0.15s;
@@ -616,7 +638,7 @@ body {
 .composer textarea::placeholder {
 	color: var(--text-dim);
 }
-/* 圆形渐变发送钮 */
+/* 发送钮 · 天青瓷面（v2：渐变退役，方形圆角） */
 .send-btn {
 	display: inline-flex;
 	flex-shrink: 0;
@@ -625,19 +647,19 @@ body {
 	width: 40px;
 	height: 40px;
 	font-size: 16px;
-	color: #fff;
+	color: var(--accent-ink);
 	cursor: pointer;
-	background: var(--accent-grad);
+	background: var(--accent);
 	border: none;
-	border-radius: 50%;
-	box-shadow: 0 4px 14px rgba(110, 108, 246, 0.4);
+	border-radius: var(--radius-s);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 	transition:
 		transform 0.16s ease,
-		box-shadow 0.16s ease,
+		background 0.16s ease,
 		opacity 0.16s;
 }
 .send-btn:hover:not(:disabled) {
-	box-shadow: 0 6px 20px rgba(110, 108, 246, 0.55);
+	background: var(--accent-2);
 	transform: translateY(-1px);
 }
 .send-btn:active:not(:disabled) {
@@ -656,14 +678,14 @@ body {
 	cursor: pointer;
 	background: transparent;
 	border: 1px solid var(--red);
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 	transition: background 0.15s;
 }
 .abort-btn:hover {
 	background: var(--badge-failed-bg);
 }
 
-/* ============ 按钮基类 ============ */
+/* ============ 按钮基类（v2：告别胶囊） ============ */
 button {
 	padding: 7px 15px;
 	font-family: inherit;
@@ -672,7 +694,7 @@ button {
 	cursor: pointer;
 	background: var(--bg-softer);
 	border: 1px solid var(--border);
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 	transition:
 		border-color 0.16s,
 		background 0.16s,
@@ -684,14 +706,24 @@ button:hover:not(:disabled) {
 }
 button.primary {
 	font-weight: 500;
-	color: #fff;
-	background: var(--accent-grad);
+	color: var(--accent-ink);
+	background: var(--accent);
 	border-color: transparent;
-	box-shadow: 0 2px 10px rgba(110, 108, 246, 0.35);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 button.primary:hover:not(:disabled) {
+	background: var(--accent-2);
 	border-color: transparent;
-	box-shadow: 0 4px 16px rgba(110, 108, 246, 0.5);
+}
+button.seal {
+	font-weight: 500;
+	color: #fff;
+	background: var(--seal);
+	border-color: transparent;
+}
+button.seal:hover:not(:disabled) {
+	background: var(--seal-hover);
+	border-color: transparent;
 }
 button.danger {
 	color: var(--red);
@@ -1020,7 +1052,7 @@ textarea:focus-visible {
 	cursor: pointer;
 	background: transparent;
 	border: 1px solid var(--border);
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 }
 .worktree-action:hover {
 	border-color: var(--accent);
@@ -1276,7 +1308,7 @@ textarea:focus-visible {
 	cursor: pointer;
 	background: none;
 	border: none;
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 	transition:
 		color 0.15s,
 		background 0.15s;
@@ -1433,9 +1465,9 @@ textarea:focus-visible {
 	font-weight: 600;
 	color: #fff;
 	cursor: pointer;
-	background: linear-gradient(135deg, var(--accent), #a78bfa);
+	background: var(--seal);
 	border: none;
-	border-radius: 8px;
+	border-radius: var(--radius-s);
 }
 .plan-approve:disabled {
 	cursor: not-allowed;
@@ -1510,12 +1542,12 @@ textarea:focus-visible {
 	padding: 0 14px;
 	font-size: 12px;
 	font-weight: 600;
-	color: #fff;
+	color: var(--accent-ink);
 	white-space: nowrap;
 	cursor: pointer;
-	background: linear-gradient(135deg, var(--accent), #a78bfa);
+	background: var(--accent);
 	border: none;
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 }
 .interrupt-send-btn:disabled {
 	cursor: not-allowed;
@@ -1781,7 +1813,7 @@ textarea:focus-visible {
 	cursor: pointer;
 	background: transparent;
 	border: 1px solid var(--border);
-	border-radius: 999px;
+	border-radius: var(--radius-s);
 }
 .pane-tool:hover {
 	color: var(--text);
@@ -1927,4 +1959,107 @@ textarea:focus-visible {
 	to {
 		opacity: 1;
 	}
+}
+
+/* ============ 墨仪 v2.1 收尾 · 宋体标题轨 / 顶光 / 焦点环 / 安静滚动条 ============ */
+.msg-user,
+.tool-card,
+.composer,
+.plan-card,
+.approval-card {
+	box-shadow:
+		inset 0 1px 0 rgba(255, 246, 235, 0.04),
+		var(--shadow-card);
+}
+[data-theme="light"] .msg-user,
+[data-theme="light"] .tool-card,
+[data-theme="light"] .composer,
+[data-theme="light"] .plan-card,
+[data-theme="light"] .approval-card {
+	box-shadow:
+		inset 0 -1px 0 rgba(32, 28, 20, 0.035),
+		var(--shadow-card);
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
+	outline: none;
+	border-color: var(--border-strong);
+	box-shadow:
+		0 0 0 1px var(--bg),
+		0 0 0 4px var(--accent-ring);
+}
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: var(--border-strong);
+	background-clip: padding-box;
+	border: 3px solid transparent;
+	border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background-color: var(--text-dim);
+}
+html {
+	scrollbar-color: var(--border-strong) transparent;
+	scrollbar-width: thin;
+}
+@media (prefers-reduced-motion: reduce) {
+	* {
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+	}
+}
+
+/* ============ 墨仪 · 「准」印与触感层（v2.1 推荐项落地） ============ */
+.seal-stamp {
+	display: inline-grid;
+	flex-shrink: 0;
+	place-items: center;
+	width: 22px;
+	height: 22px;
+	margin-left: 2px;
+	font-family: var(--font-serif);
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--seal);
+	border: 1.5px solid var(--seal);
+	border-radius: 4px;
+	box-shadow: inset 0 0 0 1px var(--seal-soft);
+	opacity: 0.9;
+	transform: rotate(-6deg);
+	animation: stamp-in var(--dur-slow, 280ms) cubic-bezier(0.34, 1.3, 0.64, 1);
+}
+@keyframes stamp-in {
+	0% {
+		transform: rotate(4deg) scale(1.4);
+		opacity: 0;
+	}
+	60% {
+		transform: rotate(-7deg) scale(0.94);
+		opacity: 1;
+	}
+	100% {
+		transform: rotate(-6deg) scale(1);
+		opacity: 0.9;
+	}
+}
+/* 纸纹 / 墨粒 · 触感层 */
+body::after {
+	position: fixed;
+	inset: 0;
+	z-index: 9999;
+	pointer-events: none;
+	content: "";
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
+	opacity: 0.028;
+}
+[data-theme="light"] body::after {
+	opacity: 0.04;
 }

@@ -8,6 +8,7 @@
 - 《编码智能体-事件模型设计.md》—— 全系统第一份契约：事件类型、SQLite schema、上下文重建算法、SSE 协议
 - 《编码智能体-技术选型与仓库结构.md》—— 选型理由与 monorepo 结构
 - 《编码智能体-v0.3设计-能力追赶计划.md》/《编码智能体-v0.4设计-交互体验追赶计划.md》—— 能力与交互追赶
+- 《编码智能体-UI设计语言提案-v1.md / -v2.md》—— 设计语言演进（v1 静谧仪器 → v2 墨仪·天青定稿），配套可交互 HTML 设计稿（`docs/编码智能体-UI设计稿-v1/v2.html`）
 
 ## 仓库结构
 
@@ -69,7 +70,7 @@ cd apps/server && bun run start
 10. 工具栏「↩ 撤销本轮改动」→ 工作区 git 回滚到本轮开始前（未提交改动先自动保存）
 11. 工具栏「⬇ 回放」→ 下载自包含 HTML 会话回放（可分享）
 12. 📎 按钮 → 附件随消息发送，agent 可用 read 工具读取
-13. 侧栏 ☀/☾ → 深色/浅色主题切换（记忆选择，默认跟随系统）
+13. 侧栏 ☀/☾ → 墨/纸主题切换（记忆选择，默认跟随系统）——「墨仪」设计语言：墨分五色表面、天青交互、朱砂盖印、宋体标题
 14. 变更面板（F2）→ 逐文件 accept/revert 审查本轮改动
 15. busy 时发消息 → 自动排队（Steering，F4），轮次结束后依次执行，可撤回
 16. 刷新页面 / 重启服务端 → 会话现场从事件日志完整恢复
@@ -195,8 +196,10 @@ libsql SQLite 事件日志（append-only，唯一事实来源；WAL）
 已完成（v0.5 + BTS 架构迁移）：v0.2 内核全部能力（安全基线 / 上下文工程 /
 能力扩展 / 主体）、P5 模型实战化、P6 质量与可观测性、P7 能力深化（回滚/附件/headless）、
 P8 对齐 OpenCode/DeepSeek Harness、v0.3 能力追赶（M1–M6）、v0.4 交互体验追赶（F1–F10）、
-Better T Stack 架构迁移（Turborepo/Biome/Varlock/libsql + 严格 TS 质量门）。
-待做（backlog）：web 升级 shadcn/Tailwind v4 重皮（packages/ui 已备好 AI Elements）、
+Better T Stack 架构迁移（Turborepo/Biome/Varlock/libsql + 严格 TS 质量门）、
+墨仪 UI 主题升级 v2.1（墨/纸双主题 token、天青×朱砂双轨、宋体标题轨 @fontsource 自托管、
+「准」批准印+盖章动效、按钮去胶囊化、卡片顶光/触感层等高级感工程）。
+待做（backlog）：web shadcn 组件层迁移（packages/ui 已备 AI Elements，token 语义已对齐墨仪）、
 API oRPC 化、Better-Auth/Drizzle 团队版唤醒、Tauri 桌面打包、TUI 接入、
 `bun build --compile` × libsql 复验、平移组件 lint 冻结解除。
 详见 docs 中开发计划文档。

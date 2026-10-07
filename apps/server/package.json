@@ -22,9 +22,9 @@
     "@shuyi-harness/db": "workspace:*",
     "@shuyi-harness/types": "workspace:*",
     "better-auth": "catalog:",
-    "hono": "^4.13.7",
+    "hono": "^4.13.13",
     "libsql": "catalog:",
-    "picomatch": "^4.0.2",
+    "picomatch": "^4.0.7",
     "varlock": "catalog:",
     "zod": "catalog:"
   },

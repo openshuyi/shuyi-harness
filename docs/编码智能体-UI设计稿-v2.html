@@ -38,20 +38,25 @@
   --line-2: rgba(255,246,235,.10);
   --line-3: rgba(255,246,235,.165);
 
-  /* 朱砂 · 交互与进行中（印泥色） */
-  --accent: #d64730;
-  --accent-hover: #e4654e;
-  --accent-active: #bf3b25;
-  --accent-soft: rgba(214,71,48,.14);
-  --accent-ring: rgba(214,71,48,.45);
-  --on-accent: #ffffff;
-  --brand-gradient: linear-gradient(135deg, #d64730, #d64730); /* v2：渐变退役，仪式归印章 */
+  /* 天青 · 交互色（汝窑「雨过天青云破处」） */
+  --accent: #8ab4d9;
+  --accent-hover: #a3c5e2;
+  --accent-active: #75a3c8;
+  --accent-soft: rgba(138,180,217,.15);
+  --accent-ring: rgba(138,180,217,.45);
+  --on-accent: #101c28;
+  --brand-gradient: linear-gradient(135deg, #8ab4d9, #8ab4d9); /* v2：渐变退役，仪式归印章 */
+
+  /* 朱砂 · 印章专属（品牌印 / 「准」印 / 批准动作） */
+  --seal: #d64730;
+  --seal-hover: #e4654e;
+  --seal-soft: rgba(214,71,48,.14);
 
   /* 语义 = 传统颜料 */
   --success: #35b98a;      --success-soft: rgba(53,185,138,.12);   /* 石绿 */
   --danger:  #ef5f7d;      --danger-soft:  rgba(239,95,125,.12);   /* 茜红 */
   --warn:    #f0b34e;      --warn-soft:    rgba(240,179,78,.12);   /* 藤黄 */
-  --info:    #7d84ea;      --info-soft:    rgba(125,132,234,.12);  /* 群青（v1 靛蓝降为信息色） */
+  --info:    #62c2cf;      --info-soft:    rgba(98,194,207,.12);   /* 青瓷（与天青拉开青绿相） */
 
   /* shape */
   --r-xs: 6px; --r-sm: 8px; --r-md: 10px; --r-lg: 12px; --r-full: 999px;
@@ -72,13 +77,15 @@
   --bg-0: #f3f0e9; --bg-1: #f7f5ee; --bg-2: #fcfbf7; --bg-3: #fcfbf7; --bg-inset: #edeadf;
   --text-1: #211f1c; --text-2: #5a5750; --text-3: #98948c;
   --line-1: rgba(32,28,20,.07); --line-2: rgba(32,28,20,.12); --line-3: rgba(32,28,20,.19);
-  --accent: #b23415; --accent-hover: #9c2d11; --accent-active: #c64425;
-  --accent-soft: rgba(178,52,21,.10); --accent-ring: rgba(178,52,21,.40);
-  --brand-gradient: linear-gradient(135deg, #b23415, #b23415);
+  --accent: #2e6ea6; --accent-hover: #255d8e; --accent-active: #3a7cb4;
+  --accent-soft: rgba(46,110,166,.10); --accent-ring: rgba(46,110,166,.40);
+  --on-accent: #ffffff;
+  --brand-gradient: linear-gradient(135deg, #2e6ea6, #2e6ea6);
+  --seal: #b23415; --seal-hover: #9c2d11; --seal-soft: rgba(178,52,21,.10);
   --success: #0f8f66; --success-soft: rgba(15,143,102,.10);
   --danger:  #c73a5c; --danger-soft:  rgba(199,58,92,.10);
   --warn:    #a8741c; --warn-soft:    rgba(168,116,28,.12);
-  --info:    #4b4fc4; --info-soft:    rgba(75,79,196,.10);
+  --info:    #0e7d8a; --info-soft:    rgba(14,125,138,.10);
 }
 
 /* ---------- 02 base ---------- */
@@ -113,10 +120,10 @@ code, kbd, pre { font-family: var(--font-mono); }
 }
 .logo {
   width: 26px; height: 26px; border-radius: var(--r-xs);
-  background: var(--accent);
+  background: var(--seal);
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); /* 刻边 · carved seal edge */
   display: grid; place-items: center;
-  font-family: var(--font-serif); font-size: 14px; font-weight: 700; color: var(--on-accent);
+  font-family: var(--font-serif); font-size: 14px; font-weight: 700; color: #ffffff;
 }
 .topbar h1 { font-size: 14px; font-weight: 600; letter-spacing: -.01em; }
 .topbar .sub { color: var(--text-3); font-size: 12px; }
@@ -364,7 +371,7 @@ section { margin-bottom: 72px; }
 .tooltip-demo { position: relative; display: inline-block; }
 .tt { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%); background: var(--bg-3); border: 1px solid var(--line-2); border-radius: var(--r-xs); padding: 5px 9px; font-size: 11.5px; color: var(--text-2); white-space: nowrap; box-shadow: var(--shadow-2); }
 .empty { text-align: center; padding: 44px 20px; border: 1px dashed var(--line-2); border-radius: var(--r-md); }
-.empty .glyph { width: 40px; height: 40px; margin: 0 auto 14px; border-radius: var(--r-sm); background: var(--accent); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); display: grid; place-items: center; color: var(--on-accent); font-family: var(--font-serif); font-size: 19px; font-weight: 700; opacity: .92; }
+.empty .glyph { width: 40px; height: 40px; margin: 0 auto 14px; border-radius: var(--r-sm); background: var(--seal); box-shadow: inset 0 0 0 1px rgba(255,255,255,.22); display: grid; place-items: center; color: #ffffff; font-family: var(--font-serif); font-size: 19px; font-weight: 700; opacity: .92; }
 .shimmer-line { height: 12px; border-radius: var(--r-full); background: linear-gradient(90deg, var(--bg-inset) 25%, var(--bg-3) 50%, var(--bg-inset) 75%); background-size: 200% 100%; animation: shim 1.8s linear infinite; }
 @keyframes shim { to { background-position: -200% 0; } }
 
@@ -414,14 +421,33 @@ body::after {
 }
 .appr { box-shadow: var(--shadow-pop), inset 0 1px 0 rgba(255,246,235,.05); }
 
-/* 印章 · seal stamp */
+/* 印章 · seal stamp（朱砂专属，不随品牌色浮动） */
 .seal {
   display: inline-grid; place-items: center; width: 38px; height: 38px;
-  border: 1.5px solid var(--accent); border-radius: 5px;
-  color: var(--accent); font-family: var(--font-serif); font-size: 19px; font-weight: 700;
+  border: 1.5px solid var(--seal); border-radius: 5px;
+  color: var(--seal); font-family: var(--font-serif); font-size: 19px; font-weight: 700;
   transform: rotate(-4deg); opacity: .92;
-  box-shadow: inset 0 0 0 1px rgba(214,71,48,.18);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--seal) 20%, transparent);
 }
+.b-seal { background: var(--seal); color: #fff; }
+.b-seal:hover { background: var(--seal-hover); }
+
+/* 盖章动效 · stamp-in */
+@keyframes stampIn {
+  0% { transform: rotate(3deg) scale(1.35); opacity: 0; filter: blur(.6px); }
+  60% { transform: rotate(-5deg) scale(.96); opacity: 1; filter: blur(0); }
+  100% { transform: rotate(-4deg) scale(1); opacity: .92; }
+}
+.stamping { animation: stampIn var(--dur-slow) var(--ease-pop); }
+
+/* ---------- 24 interaction demos · 交互演示 ---------- */
+.ovl { position: fixed; inset: 0; z-index: 100; display: grid; place-items: start center; padding-top: 14vh; background: rgba(6,5,4,.55); backdrop-filter: blur(3px) saturate(1.3); animation: fade var(--dur-base) var(--ease); }
+[data-theme="light"] .ovl { background: rgba(33,31,28,.3); }
+.ovl .cpal { animation: popin var(--dur-slow) var(--ease-pop); width: min(520px, 90vw); }
+.type-box { border: 1px solid var(--line-2); border-radius: var(--r-md); background: var(--bg-2); padding: 16px 18px; min-height: 118px; font-size: 13.5px; line-height: 1.75; color: var(--text-1); }
+.type-box .u { color: var(--text-2); }
+.pane { border: 1px solid var(--line-2); border-radius: 0 0 var(--r-md) var(--r-md); border-top: none; background: var(--bg-2); padding: 14px 16px; font-size: 12.5px; color: var(--text-2); }
+.pane .mono-line { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-3); padding: 3px 0; }
 
 /* stagger — 列表入场呼吸感 */
 @keyframes enter { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
@@ -598,7 +624,7 @@ body::after {
 
 <header class="topbar">
   <div class="logo">书</div>
-  <h1>墨仪 <span class="sub">· Ink Instrument · shuyi-harness 设计语言 v2 · 静谧仪器，着墨成仪</span></h1>
+  <h1>墨仪 <span class="sub">· Ink Instrument · shuyi-harness 设计语言 v2.1 天青定稿 · 静谧仪器，着墨成仪</span></h1>
   <div class="spacer"></div>
   <span class="lbl">spec sheet</span>
   <button class="btn sm b-secondary theme-btn" id="themeBtn" onclick="toggleTheme()">
@@ -611,7 +637,7 @@ body::after {
 <!-- ================= 01 COLOR ================= -->
 <section id="s1">
   <div class="sec-h"><span class="no">01</span><h2>墨色 · Ink & Paper</h2></div>
-  <p class="sec-d">深色是墨——「墨分五色」，焦浓重淡清五阶替代蓝灰科技调，暖中性基底如拓片碑帖；浅色是纸——宣纸帘纹的暖象牙白。语义色即传统颜料：一幅水墨画上唯一的红点是印章——色彩即信号的千年实践。</p>
+  <p class="sec-d">深色是墨——「墨分五色」，焦浓重淡清五阶替代蓝灰科技调；浅色是纸——宣纸帘纹的暖象牙白。交互色是天青（汝窑「雨过天青云破处」），朱砂退为印章专属（品牌印、「准」印、批准动作）——青瓷色的界面上，唯一的红是印。语义色即传统颜料。</p>
   <div class="lbl" style="margin-bottom:10px">墨五色 · dark surfaces</div>
   <div class="grid g6" style="margin-bottom:20px">
     <div class="sw"><div class="chip" style="background:var(--bg-0)"></div><div class="meta"><div class="n">bg-0 焦墨</div><div class="v">#0f0e0d</div></div></div>
@@ -619,18 +645,18 @@ body::after {
     <div class="sw"><div class="chip" style="background:var(--bg-2)"></div><div class="meta"><div class="n">bg-2 重墨</div><div class="v">#1c1b19</div></div></div>
     <div class="sw"><div class="chip" style="background:var(--bg-3)"></div><div class="meta"><div class="n">bg-3 淡墨</div><div class="v">#242320</div></div></div>
     <div class="sw"><div class="chip" style="background:var(--bg-inset);border-bottom:1px solid var(--line-1)"></div><div class="meta"><div class="n">inset 沉墨</div><div class="v">#0a0908</div></div></div>
-    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><div class="n">印 · 仪式位</div><div class="v">#d64730</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--seal)"></div><div class="meta"><div class="n">朱砂 · 印章专属</div><div class="v">#d64730</div></div></div>
   </div>
   <div class="lbl" style="margin-bottom:10px">颜料 · semantic pigments</div>
   <div class="grid g6">
-    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><div class="n">朱砂 交互/进行中</div><div class="v">#d64730</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--accent)"></div><div class="meta"><div class="n">天青 交互/进行中</div><div class="v">#8ab4d9</div></div></div>
     <div class="sw"><div class="chip" style="background:var(--success)"></div><div class="meta"><div class="n">石绿 完成</div><div class="v">#35b98a</div></div></div>
     <div class="sw"><div class="chip" style="background:var(--danger)"></div><div class="meta"><div class="n">茜红 拒绝/错误</div><div class="v">#ef5f7d</div></div></div>
     <div class="sw"><div class="chip" style="background:var(--warn)"></div><div class="meta"><div class="n">藤黄 待审批/用量</div><div class="v">#f0b34e</div></div></div>
-    <div class="sw"><div class="chip" style="background:var(--info)"></div><div class="meta"><div class="n">群青 提示（v1靛降格）</div><div class="v">#7d84ea</div></div></div>
+    <div class="sw"><div class="chip" style="background:var(--info)"></div><div class="meta"><div class="n">青瓷 提示/预览</div><div class="v">#62c2cf</div></div></div>
     <div class="sw"><div class="chip" style="background:var(--text-3)"></div><div class="meta"><div class="n">黛 空闲</div><div class="v">#63615c</div></div></div>
   </div>
-  <div class="spec">纸主题（右上「墨/纸」切换）：生纸 #f3f0e9 / 熟纸 #f7f5ee / 卷面 #fcfbf7 · 渐变退役——仪式从"渐变光效"移交"盖印动作"（09 节）· 发丝线转暖调 rgba(255,246,235,·)</div>
+  <div class="spec">纸主题（右上「墨/纸」切换）：生纸 #f3f0e9 · 天青交互 #2e6ea6（白字）· 墨主题天青配墨字（瓷面感 #101c28）· 渐变退役，仪式=盖印（09/22 节）</div>
 </section>
 
 <!-- ================= 02 TYPOGRAPHY ================= -->
@@ -664,6 +690,7 @@ body::after {
   <div style="display:flex;flex-direction:column;gap:16px">
     <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
       <button class="btn md b-primary">批准执行</button>
+      <button class="btn md b-seal">盖印批准</button>
       <button class="btn md b-secondary">编辑后批准</button>
       <button class="btn md b-ghost">本会话放行</button>
       <button class="btn md b-destructive">拒绝</button>
@@ -867,7 +894,7 @@ apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k"
         <li><span class="cbx"></span>双主题截图目检回归</li>
       </ul>
       <div class="plan-f">
-        <button class="btn md b-primary">批准执行</button>
+        <button class="btn md b-seal">批准执行</button>
         <button class="btn md b-secondary">编辑后批准</button>
       </div>
     </div>
@@ -881,7 +908,7 @@ apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k"
 <span class="lbl" style="font-size:10px">cwd: ~/workspace/github/openshuyi/shuyi-harness</span></div>
       <div class="appr-rule">已记忆规则：bash:pnpm test* · bash:pnpm build* （本次命令不匹配任何规则）</div>
       <div class="appr-f">
-        <button class="btn md b-primary">批准</button>
+        <button class="btn md b-seal">批准</button>
         <button class="btn md b-destructive">拒绝</button>
         <span style="flex:1"></span>
         <button class="btn md b-ghost">本会话放行 <code style="font-size:11px">git push*</code></button>
@@ -1090,7 +1117,7 @@ apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k"
         <div class="appr-h"><span class="dot d-warn pulse"></span><h3 style="font-size:15px">审批请求 · bash</h3><span class="lbl" style="color:var(--warn)">awaiting</span></div>
         <div class="appr-cmd" style="margin:12px 18px;max-height:110px">$ pnpm dlx playwright install --with-deps <span class="p">chromium</span></div>
         <div class="appr-f" style="padding:12px 18px">
-          <button class="btn md b-primary" style="height:32px">批准</button>
+          <button class="btn md b-seal" style="height:32px">批准</button>
           <button class="btn md b-destructive" style="height:32px">拒绝</button>
           <span style="flex:1"></span>
           <button class="btn md b-ghost" style="height:32px">放行 pnpm*</button>
@@ -1183,21 +1210,21 @@ apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k"
 <!-- ================= 16 ACCENT EXPLORER ================= -->
 <section id="s16">
   <div class="sec-h"><span class="no">16</span><h2>品牌色探索 · Accent Explorer</h2></div>
-  <p class="sec-d">v2 默认朱砂——类别（AI 工具）几乎无人用暖红作交互色，且自带"印章"叙事；茜红/藤黄/石绿/群青语义已固定不再随品牌色浮动。真正的命题仍是"能否<b>拥有</b>一个颜色"= 稀缺 × 纪律 × 叙事。点击卡片，<b>整页实时换肤</b>。</p>
+  <p class="sec-d">v2.1 定稿：**天青为默认交互色**（汝窑瓷面），朱砂退为印章专属不再作为交互候选。候选保留：青金（v1 回归）与松烟（无彩度上限）。点击卡片，<b>整页实时换肤</b>。</p>
   <div class="grid g4">
-    <div class="acc-card on" id="acc-cinnabar">
+    <div class="acc-card on" id="acc-azure">
+      <div class="acc-chip" style="background:linear-gradient(135deg,#8ab4d9,#c6dcec)"></div>
+      <span class="acc-name lbl">天青 · ru azure</span>
+      <span class="acc-hex">#8ab4d9 · hue 208°</span>
+      <p>「雨过天青云破处」——汝窑釉色，v2.1 默认。墨上瓷面、纸上沉静；深色配墨字（瓷面感）。朱砂印是它唯一的红点搭档。</p>
+      <button class="btn sm b-secondary" onclick="applyAccent('azure')">换上试试</button>
+    </div>
+    <div class="acc-card" id="acc-cinnabar">
       <div class="acc-chip" style="background:#d64730"></div>
       <span class="acc-name lbl">朱砂 · cinnabar</span>
       <span class="acc-hex">#d64730 · hue 11°</span>
-      <p>印泥之色，水墨上唯一的红。类别稀缺 × 叙事契合双满——「盖印即批准」是本设计语言的签名动作。</p>
+      <p>印泥之色——v2 默认解。全朱砂交互气场极强，但印与界面同色会稀释印章的稀缺性；v2.1 起仅作回溯候选。</p>
       <button class="btn sm b-secondary" onclick="applyAccent('cinnabar')">换上试试</button>
-    </div>
-    <div class="acc-card" id="acc-azure">
-      <div class="acc-chip" style="background:linear-gradient(135deg,#8ab4d9,#c6dcEC)"></div>
-      <span class="acc-name lbl">天青 · ru azure</span>
-      <span class="acc-hex">#8ab4d9 · hue 208°</span>
-      <p>「雨过天青云破处」——汝窑釉色。冷静克制，气质如瓷；深色下按钮配墨字（瓷面感）。风险：接近默认蓝。</p>
-      <button class="btn sm b-secondary" onclick="applyAccent('azure')">换上试试</button>
     </div>
     <div class="acc-card" id="acc-azurite">
       <div class="acc-chip" style="background:#6e6cf6"></div>
@@ -1210,7 +1237,7 @@ apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k"
       <div class="acc-chip" style="background:linear-gradient(135deg,#e9e6df,#8f8a80)"></div>
       <span class="acc-name lbl">松烟 · soot</span>
       <span class="acc-hex">#e9e6df · achromatic</span>
-      <p>松烟墨无彩度路线：墨即是品牌，理论上限最高。代价：进行中信号弱化，链接需群青辅助。</p>
+      <p>松烟墨无彩度路线：墨即是品牌，理论上限最高。代价：进行中信号弱化，链接需青瓷辅助。</p>
       <button class="btn sm b-secondary" onclick="applyAccent('soot')">换上试试</button>
     </div>
   </div>
@@ -1495,12 +1522,78 @@ apps/server/src/session.ts:231  <span class="k">const</span> t = <span class="k"
   </div>
 </section>
 
+<!-- ================= 22 INTERACTION ================= -->
+<section id="s22">
+  <div class="sec-h"><span class="no">22</span><h2>交互 · Interaction</h2></div>
+  <p class="sec-d">动效三档（140 hover / 200 展开 / 280 弹窗）不变；盖章是全系统唯一的"重"动效。以下演示全部可真实操作：按 <span class="kbd">⌘K</span> 呼出命令面板（本页真实生效）、点击盖章、重放流式输出、切换右面板 tabs。</p>
+  <div class="grid g2">
+    <div>
+      <div class="lbl" style="margin-bottom:8px">a · 盖章 · stamp-in 280ms ease-pop</div>
+      <div style="display:flex;align-items:center;gap:20px;border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:22px 24px">
+        <span class="seal" id="sealDemo">准</span>
+        <div style="flex:1;font-size:12.5px;color:var(--text-2)">审批通过的仪式化终点：scale 1.35→0.96→1 落定 + 3°→-4° 旋转收正 + 0.6px 墨晕散焦。一次性播放，不自动重复——盖过的印不重盖。</div>
+        <button class="btn md b-seal" onclick="stamp(document.getElementById('sealDemo'))">盖章</button>
+      </div>
+    </div>
+    <div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><span class="lbl">b · 流式渲染 · typing 28ms/char</span><button class="btn sm b-ghost" onclick="typeDemo()">重放</button></div>
+      <div class="type-box">
+        <span class="u">用户</span>：@composer.tsx 把模式切换改成分段控件，跑一遍构建<br>
+        <span id="typeTxt"></span><span class="caret"></span>
+      </div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">c · 右面板 tabs · 框景切换</div>
+      <div class="tabs">
+        <span class="tab on" id="tab0" onclick="switchTab(0)">变更 <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--accent)">2</span></span>
+        <span class="tab" id="tab1" onclick="switchTab(1)">预览</span>
+        <span class="tab" id="tab2" onclick="switchTab(2)">待办</span>
+      </div>
+      <div class="pane" id="pane0">
+        <div class="mono-line">composer.tsx <span style="color:var(--success)">+6 −4</span> · 待审</div>
+        <div class="mono-line">globals.css <span style="color:var(--success)">+12 −3</span> · 待审</div>
+      </div>
+      <div class="pane" id="pane1" style="display:none">
+        <div class="mono-line">localhost:4350 · 按会话记忆</div>
+        <div class="mono-line">[发送当前 URL 给 Agent] · 同源可点选元素</div>
+      </div>
+      <div class="pane" id="pane2" style="display:none">
+        <div class="mono-line">✓ token 体系写入 globals.css</div>
+        <div class="mono-line">□ 双主题截图目检回归</div>
+      </div>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom:8px">d · 命令面板 · ⌘K 全局</div>
+      <div style="border:1px solid var(--line-2);border-radius:var(--r-md);background:var(--bg-2);padding:22px 24px;display:flex;flex-direction:column;gap:14px">
+        <div style="font-size:12.5px;color:var(--text-2);flex:1">一个入口覆盖全部动作：输入即过滤、↑↓ 导航、⏎ 执行、Esc 关闭——本设计稿已真实接管 ⌘K。菜单与右键是它对鼠标用户的等价物。</div>
+        <button class="btn md b-primary" onclick="togglePalette(true)">打开命令面板 <span class="kbd" style="margin-left:8px;border-color:color-mix(in srgb,var(--on-accent) 40%,transparent);color:var(--on-accent);background:none">⌘K</span></button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <footer style="border-top:1px solid var(--line-1);padding-top:24px;display:flex;align-items:center;gap:14px">
   <div class="logo" style="width:20px;height:20px;font-size:10px">书</div>
-  <span class="lbl">墨仪 · ink instrument · v2 · 2026-10-07</span>
+  <span class="lbl">墨仪 · 天青定稿 · v2.1 · 2026-10-07</span>
   <span style="flex:1"></span>
   <span class="lbl" style="text-transform:none;letter-spacing:0">配套文档：编码智能体-UI设计语言提案-v2.md · 前版：v1（静谧仪器）</span>
 </footer>
+
+<!-- 命令面板 · 全局浮层（⌘K 真实接管） -->
+<div class="ovl" id="palOvl" style="display:none" onclick="if(event.target===this)togglePalette(false)">
+  <div class="cpal">
+    <div class="in"><span style="color:var(--text-3);display:flex"><svg class="ic sm"><use href="#i-find"/></svg></span><input id="palInp" placeholder="输入命令或会话名…" oninput="palFilter(this.value)"><span class="kbd">Esc</span></div>
+    <div class="grp"><div class="lbl" style="padding:4px 10px 6px">action</div>
+      <div class="item cur" onclick="togglePalette(false)"><span class="ic"><svg class="ic sm"><use href="#i-rw"/></svg></span>回滚最近 turn<span class="kb kbd">⌘⇧R</span></div>
+      <div class="item" onclick="togglePalette(false)"><span class="ic"><svg class="ic sm"><use href="#i-layer"/></svg></span>打开变更面板<span class="kb kbd">⌘⇧C</span></div>
+      <div class="item" onclick="stamp(document.getElementById('sealDemo'));togglePalette(false)"><span class="ic"><svg class="ic sm"><use href="#i-ok"/></svg></span>演示盖章</div>
+    </div>
+    <div class="grp" style="padding-bottom:8px"><div class="lbl" style="padding:4px 10px 6px">session</div>
+      <div class="item" onclick="togglePalette(false)"><span class="ic"><svg class="ic sm"><use href="#i-plus"/></svg></span>新会话<span class="kb kbd">⌘N</span></div>
+      <div class="item" onclick="togglePalette(false)"><span class="ic"><svg class="ic sm"><use href="#i-fork"/></svg></span>分叉当前会话…</div>
+    </div>
+  </div>
+</div>
 
 </div>
 
@@ -1577,6 +1670,49 @@ function toggleTheme() {
 function replayStag(id) {
   const el = document.getElementById(id);
   el.classList.remove('run'); void el.offsetWidth; el.classList.add('run');
+}
+/* ---------- interaction demos（第 22 节） ---------- */
+function stamp(el) {
+  el.classList.remove('stamping'); void el.offsetWidth; el.classList.add('stamping');
+}
+function togglePalette(force) {
+  const o = document.getElementById('palOvl');
+  const show = force !== undefined ? force : o.style.display !== 'grid';
+  o.style.display = show ? 'grid' : 'none';
+  if (show) {
+    const i = document.getElementById('palInp');
+    i.value = ''; palFilter('');
+    setTimeout(() => i.focus(), 60);
+  }
+}
+function palFilter(q) {
+  q = q.trim().toLowerCase();
+  document.querySelectorAll('#palOvl .item').forEach(it => {
+    it.style.display = it.textContent.toLowerCase().includes(q) ? 'flex' : 'none';
+  });
+}
+document.addEventListener('keydown', e => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); togglePalette(); }
+  else if (e.key === 'Escape') {
+    const o = document.getElementById('palOvl');
+    if (o && o.style.display === 'grid') togglePalette(false);
+  }
+});
+function typeDemo() {
+  const el = document.getElementById('typeTxt');
+  const full = '收到。先改 globals.css 的 radius token，再替换按钮硬编码，最后构建验证。';
+  el.textContent = '';
+  let i = 0;
+  (function tick() {
+    if (i <= full.length) { el.textContent = full.slice(0, i); i += 1; setTimeout(tick, 28); }
+  })();
+}
+typeDemo();
+function switchTab(n) {
+  for (let k = 0; k < 3; k++) {
+    document.getElementById('tab' + k)?.classList.toggle('on', k === n);
+    document.getElementById('pane' + k)?.style.setProperty('display', k === n ? 'block' : 'none');
+  }
 }
 function runCounter() {
   const ease = p => 1 - Math.pow(1 - p, 3);

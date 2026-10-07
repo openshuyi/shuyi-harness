@@ -295,7 +295,7 @@ export function ApprovalDialog({ slot = "primary" }: { slot?: PaneSlot }) {
 						拒绝
 					</button>
 					<button
-						className="primary"
+						className="seal"
 						disabled={busy}
 						onClick={() => void act("approve")}
 					>
@@ -311,7 +311,7 @@ export function ApprovalDialog({ slot = "primary" }: { slot?: PaneSlot }) {
 								全部拒绝
 							</button>
 							<button
-								className="primary"
+								className="seal"
 								disabled={busy}
 								onClick={() => void actAll("approve")}
 							>

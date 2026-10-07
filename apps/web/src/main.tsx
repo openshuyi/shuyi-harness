@@ -1,6 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createRouter, RouterProvider } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
+import "@fontsource-variable/noto-serif-sc";
 
 import Loader from "./components/loader";
 import { routeTree } from "./routeTree.gen";
