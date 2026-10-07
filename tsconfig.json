@@ -1,0 +1,6 @@
+{
+  "extends": "@shuyi-harness/config/tsconfig.base.json",
+  "compilerOptions": {
+    "strictNullChecks": true
+  }
+}
