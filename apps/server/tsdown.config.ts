@@ -1,11 +1,11 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: "./src/index.ts",
-  format: "esm",
-  outDir: "./dist",
-  clean: true,
-  deps: {
-    alwaysBundle: [/@shuyi-harness\/.*/],
-  },
+	clean: true,
+	deps: {
+		alwaysBundle: [/@shuyi-harness\/.*/],
+	},
+	entry: "./src/index.ts",
+	format: "esm",
+	outDir: "./dist",
 });

@@ -8,12 +8,12 @@
   "scripts": {
     "build": "tsc -b",
     "check-types": "tsc -b",
-    "db:local": "turso dev --db-file local.db",
-    "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
+    "db:local": "turso dev --db-file local.db",
+    "db:migrate": "drizzle-kit migrate",
     "db:migrate:deploy": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio",
-    "db:migrate": "drizzle-kit migrate"
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@libsql/client": "0.18.0",

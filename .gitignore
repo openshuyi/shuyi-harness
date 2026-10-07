@@ -16,6 +16,10 @@ build
 apps/web/src/routeTree.gen.ts
 local.db
 local.db-*
+*.db
+*.db-wal
+*.db-shm
+agent-bin
 
 # Environment variables
 .env

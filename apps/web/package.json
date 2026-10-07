@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite dev",
     "build": "tsc -b ../../packages/api && vite build",
+    "check-types": "tsc -b ../../packages/api && vite build && tsc --noEmit",
+    "desktop:build": "tauri build",
+    "desktop:dev": "tauri dev",
+    "dev": "vite dev",
+    "env:generate": "varlock codegen",
     "serve": "vite preview",
     "start": "vite",
-    "check-types": "tsc -b ../../packages/api && vite build && tsc --noEmit",
-    "tauri": "tauri",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
-    "env:generate": "varlock codegen"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@orpc/client": "catalog:",
