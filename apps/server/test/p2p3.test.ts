@@ -32,7 +32,7 @@ let bus: EventBus;
 let manager: SessionManager;
 let events: AgentEvent[] = [];
 
-beforeAll(() => {
+beforeAll(async () => {
   bus = new EventBus();
   store = new SqliteEventStore(dbPath, bus);
   bus.subscribe((e) => events.push(e));
@@ -47,23 +47,29 @@ afterAll(() => {
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
-function makeSession(mode: "plan" | "build" = "build"): SessionRecord {
-  return manager.createSession({ cwd: workspace, mode, model: "mock", sandbox_level: "workspace" });
+async function makeSession(mode: "plan" | "build" = "build"): Promise<SessionRecord> {
+  return await manager.createSession({ cwd: workspace, mode, model: "mock", sandbox_level: "workspace" });
 }
 
 async function waitIdle(session: SessionRecord, timeoutMs = 10000): Promise<void> {
   const start = Date.now();
+  // async 存储化后 postMessage 返回时轮次可能尚未启动：以「新出现 turn.completed/turn.aborted」为准
+  const doneCount = () => events.filter((e) => e.type === "turn.completed" || e.type === "turn.aborted").length;
+  const baseline = doneCount();
   for (;;) {
-    if (manager.getSession(session.session_id)!.status === "idle") return;
-    if (Date.now() - start > timeoutMs) throw new Error("等待 idle 超时");
+    if (doneCount() > baseline) {
+      const s = await manager.getSession(session.session_id);
+      if (s?.status === "idle") return;
+    }
+    if (Date.now() - start > timeoutMs) throw new Error("等待轮次结束超时");
     await new Promise((r) => setTimeout(r, 20));
   }
 }
 
 describe("P1 遗留：git 集成", () => {
   test("write 后产生原子提交，commit hash 记入 side_effects", async () => {
-    const s = makeSession();
-    manager.postMessage(s.session_id, "!write gittest.txt v1");
+    const s = await makeSession();
+    await manager.postMessage(s.session_id, "!write gittest.txt v1");
     await waitIdle(s);
 
     const completed = events.find(
@@ -80,9 +86,9 @@ describe("P1 遗留：git 集成", () => {
 
 describe("P2：Plan/Build 工具面", () => {
   test("plan 模式：模型看不到写工具，!write 不触发工具调用", async () => {
-    const s = makeSession("plan");
+    const s = await makeSession("plan");
     const mark = events.length;
-    manager.postMessage(s.session_id, "!write plan-forbidden.txt x");
+    await manager.postMessage(s.session_id, "!write plan-forbidden.txt x");
     await waitIdle(s);
 
     const slice = events.slice(mark);
@@ -91,7 +97,7 @@ describe("P2：Plan/Build 工具面", () => {
     expect(fs.existsSync(path.join(workspace, "plan-forbidden.txt"))).toBe(false);
   });
 
-  test("plan 模式权限兜底：即使模型幻觉调用写工具也被 deny", () => {
+  test("plan 模式权限兜底：即使模型幻觉调用写工具也被 deny", async () => {
     const ps = new PermissionService();
     const tools = createDefaultRegistry();
     const writeTool = tools.get("write")!;
@@ -108,9 +114,9 @@ describe("P2：Plan/Build 工具面", () => {
 
 describe("P2：记忆", () => {
   test("memory_write 落盘 + 事件 + 注入后续上下文", async () => {
-    const s = makeSession();
+    const s = await makeSession();
     const mark = events.length;
-    manager.postMessage(s.session_id, "!memory 本项目用 Bun 运行时");
+    await manager.postMessage(s.session_id, "!memory 本项目用 Bun 运行时");
     await waitIdle(s);
 
     // 文件落盘
@@ -127,7 +133,7 @@ describe("P2：记忆", () => {
 });
 
 describe("P2：压缩组件", () => {
-  test("确定性清理：重复读取只留最新，冗长输出截断", () => {
+  test("确定性清理：重复读取只留最新，冗长输出截断", async () => {
     const msgs = [
       { role: "user" as const, content: "看文件" },
       { role: "tool" as const, content: "[/a.ts 共 100 行，显示 1-100]\n旧内容", tool_call_id: "1" },
@@ -140,7 +146,7 @@ describe("P2：压缩组件", () => {
     expect(cleaned[3]!.content.length).toBeLessThan(2100);
   });
 
-  test("parseSummary：模板解析与兜底", () => {
+  test("parseSummary：模板解析与兜底", async () => {
     const good = parseSummary(
       "## Session Intent\n修 bug\n## Files Modified\n- a.ts\n## Key Decisions\n- 用 X 方案\n## Active Goals\n- 收尾\n## Next Steps\n跑测试",
     );
@@ -155,9 +161,9 @@ describe("P2：压缩组件", () => {
 
 describe("P3：子代理", () => {
   test("task 工具：子代理完成并返回摘要，事件链完整", async () => {
-    const s = makeSession();
+    const s = await makeSession();
     const mark = events.length;
-    manager.postMessage(s.session_id, "!task 总结一下这个项目");
+    await manager.postMessage(s.session_id, "!task 总结一下这个项目");
     await waitIdle(s, 15000);
 
     const slice = events.slice(mark);
@@ -174,22 +180,22 @@ describe("P3：子代理", () => {
 
 describe("P4：搜索与用量", () => {
   test("全文搜索命中历史消息", async () => {
-    const s = makeSession();
-    manager.postMessage(s.session_id, "请帮我分析 unique-keyword-xyz 的用法");
+    const s = await makeSession();
+    await manager.postMessage(s.session_id, "请帮我分析 unique-keyword-xyz 的用法");
     await waitIdle(s);
 
-    const hits = store.search("unique-keyword-xyz");
+    const hits = await store.search("unique-keyword-xyz");
     expect(hits.length).toBeGreaterThan(0);
     expect(hits[0]!.session_id).toBe(s.session_id);
     expect(hits[0]!.snippet).toContain("unique-keyword-xyz");
   });
 
   test("会话用量聚合", async () => {
-    const s = makeSession();
-    manager.postMessage(s.session_id, "随便聊聊");
+    const s = await makeSession();
+    await manager.postMessage(s.session_id, "随便聊聊");
     await waitIdle(s);
 
-    const session = manager.getSession(s.session_id)!;
+    const session = (await manager.getSession(s.session_id))!;
     expect(session.usage).toBeDefined();
     expect(session.usage!.prompt_tokens).toBeGreaterThan(0);
   });

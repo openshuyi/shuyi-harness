@@ -37,8 +37,8 @@ export interface ChatResult {
 }
 
 export interface StreamHandlers {
-  onTextDelta?: (delta: string) => void;
-  onThinkingDelta?: (delta: string) => void;
+  onTextDelta?: (delta: string) => void | Promise<void>;
+  onThinkingDelta?: (delta: string) => void | Promise<void>;
 }
 
 export interface ModelAdapter {

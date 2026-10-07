@@ -30,15 +30,15 @@ export class SessionManager {
     private models: ModelRegistry,
   ) {}
 
-  createSession(opts: {
+  async createSession(opts: {
     title?: string;
     cwd: string;
     mode: SessionMode;
     model: string;
     sandbox_level: SandboxLevel;
-  }): SessionRecord {
+  }): Promise<SessionRecord> {
     const sessionId = randomUUID();
-    const record = this.store.createSession({
+    const record = await this.store.createSession({
       session_id: sessionId,
       title: opts.title ?? `会话 ${new Date().toLocaleString("zh-CN")}`,
       cwd: opts.cwd,
@@ -50,7 +50,7 @@ export class SessionManager {
       forked_from: null,
       caller_identity: "local-user", // 身份挂钩：个人版常量
     });
-    this.store.append({
+    await this.store.append({
       session_id: sessionId,
       type: "session.created",
       actor: "system",
@@ -62,19 +62,19 @@ export class SessionManager {
         sandbox_level: record.sandbox_level,
       },
     });
-    return this.store.getSession(sessionId)!;
+    return (await this.store.getSession(sessionId))!;
   }
 
-  getSession(sessionId: string): SessionRecord | null {
+  async getSession(sessionId: string): Promise<SessionRecord | null> {
     return this.store.getSession(sessionId);
   }
 
-  listSessions(): SessionRecord[] {
+  async listSessions(): Promise<SessionRecord[]> {
     return this.store.listSessions();
   }
 
-  postMessage(sessionId: string, text: string): void {
-    const session = this.store.getSession(sessionId);
+  async postMessage(sessionId: string, text: string): Promise<void> {
+    const session = await this.store.getSession(sessionId);
     if (!session) throw new Error(`会话不存在: ${sessionId}`);
     if (session.status === "running" || session.status === "awaiting_approval") {
       throw new Error("会话正忙，请先中断或等待当前轮次结束");
@@ -129,14 +129,14 @@ export class SessionManager {
     });
   }
 
-  updateConfig(
+  async updateConfig(
     sessionId: string,
     patch: { mode?: SessionMode; model?: string; sandbox_level?: SandboxLevel },
-  ): void {
-    const session = this.store.getSession(sessionId);
+  ): Promise<void> {
+    const session = await this.store.getSession(sessionId);
     if (!session) throw new Error(`会话不存在: ${sessionId}`);
-    this.store.updateSessionConfig(sessionId, patch);
-    this.store.append({
+    await this.store.updateSessionConfig(sessionId, patch);
+    await this.store.append({
       session_id: sessionId,
       type: "session.config_changed",
       actor: "user",
@@ -146,10 +146,10 @@ export class SessionManager {
     if (patch.mode || patch.sandbox_level) this.permissionFor(sessionId).clearRules();
   }
 
-  fork(sessionId: string, atSeq: number): SessionRecord {
-    const source = this.store.getSession(sessionId);
+  async fork(sessionId: string, atSeq: number): Promise<SessionRecord> {
+    const source = await this.store.getSession(sessionId);
     if (!source) throw new Error(`会话不存在: ${sessionId}`);
-    const fork = this.createSession({
+    const fork = await this.createSession({
       title: `${source.title}（分叉）`,
       cwd: source.cwd,
       mode: source.mode,
@@ -157,10 +157,10 @@ export class SessionManager {
       sandbox_level: source.sandbox_level,
     });
     // 复制 [0, atSeq] 事件（session.created 事件除外，新会话已有自己的）
-    const events = this.store.readRange(sessionId, 0, atSeq);
+    const events = await this.store.readRange(sessionId, 0, atSeq);
     for (const e of events) {
       if (e.type === "session.created") continue;
-      this.store.append({
+      await this.store.append({
         session_id: fork.session_id,
         type: e.type,
         actor: e.actor,
@@ -169,18 +169,18 @@ export class SessionManager {
         payload: e.payload,
       } as never);
     }
-    this.store.append({
+    await this.store.append({
       session_id: fork.session_id,
       type: "session.forked",
       actor: "user",
       payload: { from_session_id: sessionId, fork_at_seq: atSeq },
     });
-    return this.store.getSession(fork.session_id)!;
+    return (await this.store.getSession(fork.session_id))!;
   }
 
-  archive(sessionId: string): void {
-    this.store.updateSessionConfig(sessionId, { archived: true });
-    this.store.append({
+  async archive(sessionId: string): Promise<void> {
+    await this.store.updateSessionConfig(sessionId, { archived: true });
+    await this.store.append({
       session_id: sessionId,
       type: "session.archived",
       actor: "user",

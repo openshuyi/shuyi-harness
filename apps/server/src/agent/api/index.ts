@@ -37,23 +37,23 @@ export function createApi(deps: ApiDeps): Hono {
   // ---------- 会话 ----------
   app.post("/api/sessions", async (c) => {
     const body = CreateSessionRequest.parse(await c.req.json());
-    const session = deps.sessions.createSession(body);
+    const session = await deps.sessions.createSession(body);
     return c.json(session, 201);
   });
 
-  app.get("/api/sessions", (c) => {
-    return c.json(deps.sessions.listSessions());
+  app.get("/api/sessions", async (c) => {
+    return c.json(await deps.sessions.listSessions());
   });
 
-  app.get("/api/sessions/:id", (c) => {
-    const session = deps.sessions.getSession(c.req.param("id"));
+  app.get("/api/sessions/:id", async (c) => {
+    const session = await deps.sessions.getSession(c.req.param("id"));
     if (!session) return c.json({ error: "会话不存在" }, 404);
     return c.json(session);
   });
 
   app.post("/api/sessions/:id/messages", async (c) => {
     const body = PostMessageRequest.parse(await c.req.json());
-    deps.sessions.postMessage(c.req.param("id"), body.text);
+    await deps.sessions.postMessage(c.req.param("id"), body.text);
     return c.json({ ok: true }, 202);
   });
 
@@ -64,18 +64,18 @@ export function createApi(deps: ApiDeps): Hono {
 
   app.post("/api/sessions/:id/config", async (c) => {
     const body = await c.req.json();
-    deps.sessions.updateConfig(c.req.param("id"), body);
+    await deps.sessions.updateConfig(c.req.param("id"), body);
     return c.json({ ok: true });
   });
 
   app.post("/api/sessions/:id/fork", async (c) => {
     const body = ForkSessionRequest.parse(await c.req.json());
-    const fork = deps.sessions.fork(c.req.param("id"), body.at_seq);
+    const fork = await deps.sessions.fork(c.req.param("id"), body.at_seq);
     return c.json(fork, 201);
   });
 
-  app.post("/api/sessions/:id/archive", (c) => {
-    deps.sessions.archive(c.req.param("id"));
+  app.post("/api/sessions/:id/archive", async (c) => {
+    await deps.sessions.archive(c.req.param("id"));
     return c.json({ ok: true });
   });
 
@@ -88,10 +88,10 @@ export function createApi(deps: ApiDeps): Hono {
   });
 
   // ---------- 全文搜索（P4） ----------
-  app.get("/api/search", (c) => {
+  app.get("/api/search", async (c) => {
     const q = c.req.query("q")?.trim();
     if (!q) return c.json([]);
-    return c.json(deps.store.search(q));
+    return c.json(await deps.store.search(q));
   });
 
   // ---------- 模型 ----------
@@ -106,14 +106,14 @@ export function createApi(deps: ApiDeps): Hono {
   });
 
   // ---------- SSE 事件订阅 ----------
-  app.get("/api/sessions/:id/events", (c) => {
+  app.get("/api/sessions/:id/events", async (c) => {
     const sessionId = c.req.param("id");
     const afterSeq = Number(c.req.query("after_seq") ?? "-1");
-    if (!deps.sessions.getSession(sessionId)) return c.json({ error: "会话不存在" }, 404);
+    if (!(await deps.sessions.getSession(sessionId))) return c.json({ error: "会话不存在" }, 404);
 
     return streamSSE(c, async (stream) => {
       // 1. 补发缺口
-      const missed = deps.store.readSince(sessionId, afterSeq);
+      const missed = await deps.store.readSince(sessionId, afterSeq);
       for (const e of missed) {
         await stream.writeSSE({ data: JSON.stringify(e) });
       }

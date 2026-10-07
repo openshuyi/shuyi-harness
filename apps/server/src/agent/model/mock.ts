@@ -41,7 +41,7 @@ export class MockAdapter implements ModelAdapter {
     for (const ch of step.text ?? "") {
       if (handlers.onTextDelta) {
         text += ch;
-        handlers.onTextDelta(ch);
+        await handlers.onTextDelta(ch);
         await new Promise((r) => setTimeout(r, 2));
       } else {
         text += ch;

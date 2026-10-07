@@ -82,12 +82,12 @@ export interface RebuildResult {
   compacted: boolean;
 }
 
-export function rebuildContext(
+export async function rebuildContext(
   store: EventStore,
   session: SessionRecord,
   tools: ToolSpec[],
-): RebuildResult & { system: string } {
-  const events = store.readSince(session.session_id, -1);
+): Promise<RebuildResult & { system: string }> {
+  const events = await store.readSince(session.session_id, -1);
 
   // 1. 找最新压缩边界
   let coversUntilSeq = -1;

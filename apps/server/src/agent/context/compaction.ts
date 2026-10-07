@@ -148,9 +148,9 @@ export async function compactSession(
 
   const summary = parseSummary(result.text);
   const tokensAfter = estimateTokens(JSON.stringify(summary));
-  const coversUntilSeq = store.latestSeq(sessionId);
+  const coversUntilSeq = await store.latestSeq(sessionId);
 
-  store.append({
+  await store.append({
     session_id: sessionId,
     type: "context.compacted",
     actor: "system",

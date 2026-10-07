@@ -61,15 +61,15 @@ export async function runTurn(
   const turnId = randomUUID();
   const repoReady = ensureRepo(session.cwd); // git 撤销机制（不可用时静默降级）
 
-  store.append({ session_id: sid, type: "turn.started", actor: "system", turn_id: turnId, payload: {} });
-  store.append({
+  await store.append({ session_id: sid, type: "turn.started", actor: "system", turn_id: turnId, payload: {} });
+  await store.append({
     session_id: sid,
     type: "message.user",
     actor: "user",
     turn_id: turnId,
     payload: { text: userText },
   });
-  store.setSessionStatus(sid, "running");
+  await store.setSessionStatus(sid, "running");
 
   let totalUsage = { prompt_tokens: 0, completion_tokens: 0 };
   let iterations = 0;
@@ -82,7 +82,7 @@ export async function runTurn(
       // 模式决定工具面（Loop 不变）：plan 模式只暴露只读工具
       const specs = tools.toModelSpecs(session.mode);
       const memory = readMemory(session.cwd);
-      let { system, messages } = rebuildContext(store, session, specs);
+      let { system, messages } = await rebuildContext(store, session, specs);
       let allMessages = assembleWithMemory(messages, memory);
       let tokenEstimate =
         estimateTokens(system) + estimateMessagesTokens(allMessages);
@@ -90,12 +90,12 @@ export async function runTurn(
       // ---- 压缩：填充 ~75% 触发，压缩后重建再继续 ----
       if (shouldCompact(tokenEstimate, contextWindow())) {
         await compactSession(store, sid, turnId, allMessages, adapter);
-        ({ system, messages } = rebuildContext(store, session, specs));
+        ({ system, messages } = await rebuildContext(store, session, specs));
         allMessages = assembleWithMemory(messages, memory);
         tokenEstimate = estimateTokens(system) + estimateMessagesTokens(allMessages);
       }
 
-      store.append({
+      await store.append({
         session_id: sid,
         type: "context.request.assembled",
         actor: "system",
@@ -112,22 +112,24 @@ export async function runTurn(
       const result = await adapter.streamChat(
         { model: session.model, system, messages: allMessages, tools: specs },
         {
-          onTextDelta: (d) =>
-            store.append({
+          onTextDelta: async (d) => {
+            await store.append({
               session_id: sid,
               type: "message.assistant.delta",
               actor: "agent",
               turn_id: turnId,
               payload: { text_delta: d },
-            }),
-          onThinkingDelta: (d) =>
-            store.append({
+            });
+          },
+          onThinkingDelta: async (d) => {
+            await store.append({
               session_id: sid,
               type: "message.assistant.thinking_delta",
               actor: "agent",
               turn_id: turnId,
               payload: { thinking_delta: d },
-            }),
+            });
+          },
         },
         signal,
       );
@@ -135,7 +137,7 @@ export async function runTurn(
       totalUsage.prompt_tokens += result.usage.prompt_tokens;
       totalUsage.completion_tokens += result.usage.completion_tokens;
 
-      store.append({
+      await store.append({
         session_id: sid,
         type: "message.assistant.completed",
         actor: "agent",
@@ -145,14 +147,14 @@ export async function runTurn(
 
       // ---- 无工具调用 → 轮次结束 ----
       if (result.toolCalls.length === 0) {
-        store.append({
+        await store.append({
           session_id: sid,
           type: "turn.completed",
           actor: "system",
           turn_id: turnId,
           payload: { usage: totalUsage, model: session.model },
         });
-        store.setSessionStatus(sid, "idle");
+        await store.setSessionStatus(sid, "idle");
         return;
       }
 
@@ -160,7 +162,7 @@ export async function runTurn(
       for (const call of result.toolCalls) {
         if (signal.aborted) return abortTurn(store, sid, turnId, "用户中断");
         if (++iterations > MAX_TOOL_ITERATIONS) {
-          store.append({
+          await store.append({
             session_id: sid,
             type: "error.occurred",
             actor: "system",
@@ -172,7 +174,7 @@ export async function runTurn(
 
         const tool = tools.get(call.name);
         if (!tool) {
-          store.append({
+          await store.append({
             session_id: sid,
             type: "tool.call.failed",
             actor: "system",
@@ -185,7 +187,7 @@ export async function runTurn(
         // 参数校验
         const parsed = tool.argsSchema.safeParse(call.args);
         if (!parsed.success) {
-          store.append({
+          await store.append({
             session_id: sid,
             type: "tool.call.failed",
             actor: "system",
@@ -209,7 +211,7 @@ export async function runTurn(
           mode: session.mode,
         });
 
-        const proposedEvent = store.append({
+        const proposedEvent = await store.append({
           session_id: sid,
           type: "tool.call.proposed",
           actor: "agent",
@@ -218,7 +220,7 @@ export async function runTurn(
         });
 
         if (verdict.kind === "deny") {
-          store.append({
+          await store.append({
             session_id: sid,
             type: "tool.call.failed",
             actor: "system",
@@ -231,7 +233,7 @@ export async function runTurn(
 
         if (verdict.kind === "ask") {
           const approvalId = randomUUID();
-          store.append({
+          await store.append({
             session_id: sid,
             type: "approval.requested",
             actor: "system",
@@ -245,11 +247,11 @@ export async function runTurn(
               risk_summary: verdict.reason,
             },
           });
-          store.setSessionStatus(sid, "awaiting_approval");
+          await store.setSessionStatus(sid, "awaiting_approval");
 
           const resolution = await deps.waitForApproval(sid, approvalId);
-          store.setSessionStatus(sid, "running");
-          store.append({
+          await store.setSessionStatus(sid, "running");
+          await store.append({
             session_id: sid,
             type: "approval.resolved",
             actor: "user",
@@ -264,7 +266,7 @@ export async function runTurn(
           });
 
           if (resolution.decision === "deny") {
-            store.append({
+            await store.append({
               session_id: sid,
               type: "tool.call.failed",
               actor: "system",
@@ -284,7 +286,7 @@ export async function runTurn(
         }
 
         // ---- 执行工具 ----
-        store.append({
+        await store.append({
           session_id: sid,
           type: "tool.call.started",
           actor: "system",
@@ -296,24 +298,26 @@ export async function runTurn(
         const toolCtx: ToolContext = {
           sessionId: sid,
           cwd: session.cwd,
-          onOutputChunk: (chunk) =>
-            store.append({
+          onOutputChunk: async (chunk) => {
+            await store.append({
               session_id: sid,
               type: "tool.call.output_delta",
               actor: "system",
               turn_id: turnId,
               causation_id: proposedEvent.event_id,
               payload: { call_id: call.id, chunk },
-            }),
-          onMemoryWritten: (file, excerpt, reason) =>
-            store.append({
+            });
+          },
+          onMemoryWritten: async (file, excerpt, reason) => {
+            await store.append({
               session_id: sid,
               type: "memory.written",
               actor: "system",
               turn_id: turnId,
               causation_id: proposedEvent.event_id,
               payload: { file, excerpt, reason },
-            }),
+            });
+          },
           spawnSubagent: (task, parentCallId) =>
             runSubagent(task, parentCallId || call.id, session, adapter, tools, store, turnId),
         };
@@ -329,7 +333,7 @@ export async function runTurn(
                 `agent(${call.name}): ${out.sideEffects.files_written.length} 个文件`,
               ) ?? undefined;
           }
-          store.append({
+          await store.append({
             session_id: sid,
             type: "tool.call.completed",
             actor: "system",
@@ -344,7 +348,7 @@ export async function runTurn(
             },
           });
         } catch (err) {
-          store.append({
+          await store.append({
             session_id: sid,
             type: "tool.call.failed",
             actor: "system",
@@ -362,7 +366,7 @@ export async function runTurn(
     }
   } catch (err) {
     if (signal.aborted) return abortTurn(store, sid, turnId, "用户中断");
-    store.append({
+    await store.append({
       session_id: sid,
       type: "error.occurred",
       actor: "system",
@@ -373,17 +377,17 @@ export async function runTurn(
         retryable: true,
       },
     });
-    store.setSessionStatus(sid, "idle");
+    await store.setSessionStatus(sid, "idle");
   }
 }
 
-function abortTurn(store: EventStore, sid: string, turnId: string, reason: string): void {
-  store.append({
+async function abortTurn(store: EventStore, sid: string, turnId: string, reason: string): Promise<void> {
+  await store.append({
     session_id: sid,
     type: "turn.aborted",
     actor: "user",
     turn_id: turnId,
     payload: { reason },
   });
-  store.setSessionStatus(sid, "idle");
+  await store.setSessionStatus(sid, "idle");
 }

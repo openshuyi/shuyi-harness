@@ -29,7 +29,7 @@ export async function runSubagent(
   store: EventStore,
   turnId: string,
 ): Promise<string> {
-  store.append({
+  await store.append({
     session_id: session.session_id,
     type: "subagent.started",
     actor: "system",
@@ -107,7 +107,7 @@ export async function runSubagent(
       clearTimeout(timer);
     }
   } finally {
-    store.append({
+    await store.append({
       session_id: session.session_id,
       type: "subagent.completed",
       actor: "system",

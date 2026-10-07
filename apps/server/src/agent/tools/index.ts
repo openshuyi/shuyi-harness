@@ -14,9 +14,9 @@ export interface ToolContext {
   sessionId: string;
   cwd: string;
   /** bash 长输出分片回调（写 tool.call.output_delta 事件） */
-  onOutputChunk?: (chunk: string) => void;
+  onOutputChunk?: (chunk: string) => void | Promise<void>;
   /** memory_write 落盘后回调（写 memory.written 事件） */
-  onMemoryWritten?: (file: string, excerpt: string, reason: string) => void;
+  onMemoryWritten?: (file: string, excerpt: string, reason: string) => void | Promise<void>;
   /** task 工具：派生子代理（上下文隔离，返回浓缩结论）。由 Loop 注入。 */
   spawnSubagent?: (task: string, parentCallId: string) => Promise<string>;
 }
@@ -158,10 +158,12 @@ const bashTool: ToolDefinition = {
     return new Promise<ToolResult>((resolvePromise, reject) => {
       const proc = spawn("bash", ["-c", command], { cwd: ctx.cwd });
       let out = "";
+      // 串行化分片回调（onOutputChunk 现可为异步），保证 output_delta 顺序
+      let chunkChain = Promise.resolve();
       const onData = (chunk: Buffer) => {
         const s = chunk.toString();
         out += s;
-        ctx.onOutputChunk?.(s);
+        chunkChain = chunkChain.then(() => ctx.onOutputChunk?.(s));
       };
       proc.stdout.on("data", onData);
       proc.stderr.on("data", onData);
@@ -171,10 +173,13 @@ const bashTool: ToolDefinition = {
       }, timeout);
       proc.on("close", (code) => {
         clearTimeout(timer);
-        const { result, truncated } = truncate(out || "(无输出)");
-        resolvePromise({
-          result: `[退出码 ${code}]\n${result}`,
-          truncated,
+        // 等所有分片事件落库后再完成，保证 output_delta 先于 completed
+        void chunkChain.then(() => {
+          const { result, truncated } = truncate(out || "(无输出)");
+          resolvePromise({
+            result: `[退出码 ${code}]\n${result}`,
+            truncated,
+          });
         });
       });
       proc.on("error", (err) => {
@@ -280,7 +285,7 @@ const memoryWriteTool: ToolDefinition = {
     const date = new Date().toISOString().slice(0, 10);
     const line = `\n- [${date}] ${args.entry as string}（${args.reason as string}）\n`;
     fs.appendFileSync(memPath, line, "utf-8");
-    ctx.onMemoryWritten?.(memPath, (args.entry as string).slice(0, 120), args.reason as string);
+    ctx.onMemoryWritten && (await ctx.onMemoryWritten(memPath, (args.entry as string).slice(0, 120), args.reason as string));
     return { result: `已写入记忆 ${memPath}`, truncated: false };
   },
 };

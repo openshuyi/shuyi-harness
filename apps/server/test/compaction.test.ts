@@ -38,12 +38,16 @@ afterAll(() => {
 
 describe("P2：压缩触发与重建", () => {
   test("小窗口下触发 context.compacted，重建使用结构化摘要", async () => {
-    const s = manager.createSession({ cwd: workspace, mode: "build", model: "mock", sandbox_level: "workspace" });
-    manager.postMessage(s.session_id, "!write compact-test.txt 一些内容用于撑大上下文");
+    const s = await manager.createSession({ cwd: workspace, mode: "build", model: "mock", sandbox_level: "workspace" });
+    await manager.postMessage(s.session_id, "!write compact-test.txt 一些内容用于撑大上下文");
 
     const start = Date.now();
+    const doneBase = events.filter((e) => e.type === "turn.completed" || e.type === "turn.aborted").length;
     for (;;) {
-      if (manager.getSession(s.session_id)!.status === "idle") break;
+      if (events.filter((e) => e.type === "turn.completed" || e.type === "turn.aborted").length > doneBase) {
+        const cur = await manager.getSession(s.session_id);
+        if (cur?.status === "idle") break;
+      }
       if (Date.now() - start > 15000) throw new Error("等待 idle 超时");
       await new Promise((r) => setTimeout(r, 20));
     }
@@ -65,9 +69,9 @@ describe("P2：压缩触发与重建", () => {
     expect(p.tokens_before).toBeGreaterThan(0);
 
     // 重建：摘要作为首条消息，且边界之后的事件仍参与 fold
-    const { messages, compacted: wasCompacted } = rebuildContext(
+    const { messages, compacted: wasCompacted } = await rebuildContext(
       store,
-      manager.getSession(s.session_id)!,
+      (await manager.getSession(s.session_id))!,
       createDefaultRegistry().toModelSpecs(),
     );
     expect(wasCompacted).toBe(true);

@@ -117,10 +117,10 @@ export class OpenAICompatAdapter implements ModelAdapter {
         const delta = choice.delta;
         if (delta?.content) {
           text += delta.content;
-          handlers.onTextDelta?.(delta.content);
+          await handlers.onTextDelta?.(delta.content);
         }
         if (delta?.reasoning_content) {
-          handlers.onThinkingDelta?.(delta.reasoning_content);
+          await handlers.onThinkingDelta?.(delta.reasoning_content);
         }
         for (const tc of delta?.tool_calls ?? []) {
           const idx = tc.index ?? 0;

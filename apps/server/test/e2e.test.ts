@@ -57,15 +57,15 @@ async function waitForTurnCompleted(fromIndex: number, timeoutMs = 8000): Promis
       .slice(fromIndex)
       .some((e) => e.type === "turn.completed" || e.type === "turn.aborted");
     // 轮次事件与状态变更是两次 append，需等状态落到 idle 才算真正结束
-    if (done && manager.getSession(session.session_id)!.status === "idle") return;
+    if (done && (await manager.getSession(session.session_id))!.status === "idle") return;
     if (Date.now() - start > timeoutMs) throw new Error("等待轮次结束超时");
     await new Promise((r) => setTimeout(r, 20));
   }
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   makeStack();
-  session = manager.createSession({
+  session = await manager.createSession({
     cwd: workspace,
     mode: "build",
     model: "mock",
@@ -81,7 +81,7 @@ afterAll(() => {
 describe("P0 端到端", () => {
   test("write 工具：工作区内自动放行并真实写文件", async () => {
     const mark = events.length;
-    manager.postMessage(session.session_id, "!write hello.txt hello agent");
+    await manager.postMessage(session.session_id, "!write hello.txt hello agent");
     await waitForTurnCompleted(mark);
 
     // 文件真实写入
@@ -103,12 +103,12 @@ describe("P0 端到端", () => {
 
   test("bash 审批：挂起 → 批准 → 执行", async () => {
     const mark = events.length;
-    manager.postMessage(session.session_id, "!bash echo approval-works");
+    await manager.postMessage(session.session_id, "!bash echo approval-works");
 
     // 等待审批挂起
     const req = await waitFor("approval.requested", mark);
     const { approval_id } = req.payload as { approval_id: string };
-    expect(manager.getSession(session.session_id)!.status).toBe("awaiting_approval");
+    expect((await manager.getSession(session.session_id))!.status).toBe("awaiting_approval");
 
     // 批准
     const ok = manager.resolveApproval(session.session_id, approval_id, { decision: "approve" });
@@ -123,7 +123,7 @@ describe("P0 端到端", () => {
 
   test("bash 审批：拒绝 → 工具失败事件，模型收到拒绝信息", async () => {
     const mark = events.length;
-    manager.postMessage(session.session_id, "!bash rm -rf /");
+    await manager.postMessage(session.session_id, "!bash rm -rf /");
     const req = await waitFor("approval.requested", mark, 8000);
     const { approval_id } = req.payload as { approval_id: string };
     manager.resolveApproval(session.session_id, approval_id, {
@@ -142,7 +142,7 @@ describe("P0 端到端", () => {
 
   test("权限拒绝：越出工作区的写入被 deny（fail-closed）", async () => {
     const mark = events.length;
-    manager.postMessage(session.session_id, "!write /etc/evil.txt nope");
+    await manager.postMessage(session.session_id, "!write /etc/evil.txt nope");
     await waitForTurnCompleted(mark);
 
     const slice = events.slice(mark);
@@ -152,9 +152,9 @@ describe("P0 端到端", () => {
     expect(fs.existsSync("/etc/evil.txt")).toBe(false);
   });
 
-  test("上下文重建：tool call 与 tool result 配对", () => {
+  test("上下文重建：tool call 与 tool result 配对", async () => {
     const tools = createDefaultRegistry();
-    const { messages } = rebuildContext(store, manager.getSession(session.session_id)!, tools.toModelSpecs());
+    const { messages } = await rebuildContext(store, (await manager.getSession(session.session_id))!, tools.toModelSpecs());
 
     const assistantWithCalls = messages.filter((m) => m.role === "assistant" && m.tool_calls?.length);
     const toolMsgs = messages.filter((m) => m.role === "tool");
@@ -169,35 +169,35 @@ describe("P0 端到端", () => {
     }
   });
 
-  test("恢复：新存储实例重开同一 DB，事件与上下文完好", () => {
+  test("恢复：新存储实例重开同一 DB，事件与上下文完好", async () => {
     store.close();
     events = [];
     makeStack(); // 新 store + 新 manager，同一 dbPath
 
-    const restored = manager.getSession(session.session_id);
+    const restored = await manager.getSession(session.session_id);
     expect(restored).not.toBeNull();
     expect(restored!.last_seq).toBeGreaterThan(0);
 
     const tools = createDefaultRegistry();
-    const { messages } = rebuildContext(store, restored!, tools.toModelSpecs());
+    const { messages } = await rebuildContext(store, restored!, tools.toModelSpecs());
     const userMsgs = messages.filter((m) => m.role === "user");
     expect(userMsgs.some((m) => m.content.includes("!write hello.txt"))).toBe(true);
   });
 
-  test("分叉：复制事件至指定 seq", () => {
-    const source = manager.getSession(session.session_id)!;
+  test("分叉：复制事件至指定 seq", async () => {
+    const source = (await manager.getSession(session.session_id))!;
     const midSeq = Math.floor(source.last_seq / 2);
-    const fork = manager.fork(session.session_id, midSeq);
+    const fork = await manager.fork(session.session_id, midSeq);
     expect(fork.session_id).not.toBe(session.session_id);
 
-    const forkEvents = store.readSince(fork.session_id, -1);
+    const forkEvents = await store.readSince(fork.session_id, -1);
     const forkedMarker = forkEvents.find((e) => e.type === "session.forked");
     expect(forkedMarker).toBeDefined();
     expect((forkedMarker!.payload as { fork_at_seq: number }).fork_at_seq).toBe(midSeq);
   });
 
-  test("seq 单调无空洞", () => {
-    const all = store.readSince(session.session_id, -1);
+  test("seq 单调无空洞", async () => {
+    const all = await store.readSince(session.session_id, -1);
     for (let i = 0; i < all.length; i++) {
       expect(all[i]!.seq).toBe(i);
     }
