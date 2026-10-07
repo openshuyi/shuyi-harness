@@ -12,12 +12,14 @@
     "start": "bun run dist/index.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@orpc/openapi": "catalog:",
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "@shuyi-harness/api": "workspace:*",
     "@shuyi-harness/auth": "workspace:*",
     "@shuyi-harness/db": "workspace:*",
+    "@shuyi-harness/types": "workspace:*",
     "better-auth": "catalog:",
     "hono": "^4.13.7",
     "libsql": "catalog:",
@@ -28,6 +30,7 @@
     "@shuyi-harness/config": "workspace:*",
     "@types/bun": "catalog:",
     "tsdown": "^0.23.0",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "typescript-language-server": "^6.0.1"
   }
 }
